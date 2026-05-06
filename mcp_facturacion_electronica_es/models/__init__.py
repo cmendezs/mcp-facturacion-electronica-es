@@ -1,0 +1,1 @@
+"""Spanish e-invoicing models."""
