@@ -1,11 +1,10 @@
-# mcp-facturacion-electronica-es
+# mcp-facturacion-electronica-es 🇪🇸
 <!-- mcp-name: io.github.cmendezs/mcp-facturacion-electronica-es -->
 
+![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)
 [![PyPI version](https://img.shields.io/pypi/v/mcp-facturacion-electronica-es.svg)](https://pypi.org/project/mcp-facturacion-electronica-es/)
-[![Python](https://img.shields.io/pypi/pyversions/mcp-facturacion-electronica-es.svg)](https://pypi.org/project/mcp-facturacion-electronica-es/)
-[![License: Apache-2.0](https://img.shields.io/badge/License-Apache--2.0-blue.svg)](LICENSE)
+[![Python](https://img.shields.io/pypi/pyversions/mcp-facturacion-electronica-es.svg)](https://pypi.org/project/mcp-facturacion-electronica-es/) [![mcp-facturacion-electronica-es MCP server](https://glama.ai/mcp/servers/cmendezs/mcp-facturacion-electronica-es/badges/score.svg)](https://glama.ai/mcp/servers/cmendezs/mcp-facturacion-electronica-es)
 [![MCP Compatible](https://img.shields.io/badge/MCP-compatible-brightgreen.svg)](https://modelcontextprotocol.io)
-[![mcp-facturacion-electronica-es MCP server](https://glama.ai/mcp/servers/cmendezs/mcp-facturacion-electronica-es/badges/score.svg)](https://glama.ai/mcp/servers/cmendezs/mcp-facturacion-electronica-es)
 [![Audit status](https://img.shields.io/badge/audit-PENDING%20IMPLEMENTATION-orange.svg)](#resumen-del-audit--fase-1)
 
 ---
@@ -843,14 +842,14 @@ la verificación regulatoria.
 ## Otros servidores MCP de facturación electrónica
 
 | País | Servidor |
-|---|---|
-| Núcleo compartido | [mcp-einvoicing-core](https://github.com/cmendezs/mcp-einvoicing-core) |
-| Bélgica | [mcp-einvoicing-be](https://github.com/cmendezs/mcp-einvoicing-be) |
-| Alemania | [mcp-einvoicing-de](https://github.com/cmendezs/mcp-einvoicing-de) |
-| España | [mcp-facturacion-electronica-es](https://github.com/cmendezs/mcp-facturacion-electronica-es) |
-| Francia | [mcp-facture-electronique-fr](https://github.com/cmendezs/mcp-facture-electronique-fr) |
-| Italia | [mcp-fattura-elettronica-it](https://github.com/cmendezs/mcp-fattura-elettronica-it) |
-| Polonia | [mcp-ksef-pl](https://github.com/cmendezs/mcp-ksef-pl) |
+|---------|--------|
+| 🌍 Global | [mcp-einvoicing-core](https://github.com/cmendezs/mcp-einvoicing-core) |
+| 🇩🇪 Alemania | [mcp-einvoicing-de](https://github.com/cmendezs/mcp-einvoicing-de) |
+| 🇧🇪 Bélgica | [mcp-einvoicing-be](https://github.com/cmendezs/mcp-einvoicing-be) |
+| 🇪🇸 España | [mcp-facturacion-electronica-es](https://github.com/cmendezs/mcp-facturacion-electronica-es) |
+| 🇫🇷 Francia | [mcp-facture-electronique-fr](https://github.com/cmendezs/mcp-facture-electronique-fr) |
+| 🇮🇹 Italia | [mcp-fattura-elettronica-it](https://github.com/cmendezs/mcp-fattura-elettronica-it) |
+| 🇵🇱 Polonia | [mcp-ksef-pl](https://github.com/cmendezs/mcp-ksef-pl) |
 
 ---
 
