@@ -568,7 +568,7 @@ async def handle_es_validate_facturae_schema(
         warnings: list[str] = []
 
         def _req(tag: str) -> None:
-            if root.find(f".//*[local-name()='{tag}']") is None:
+            if not root.xpath(f".//*[local-name()='{tag}']"):
                 errors.append(f"Elemento obligatorio ausente: <{tag}>")
 
         for tag in [

@@ -394,7 +394,8 @@ async def handle_es_parse_aeat_response(
 
         def _find(parent: etree._Element, *local_names: str) -> etree._Element | None:
             for name in local_names:
-                found = parent.find(f".//*[local-name()='{name}']")
+                results = parent.xpath(f".//*[local-name()='{name}']")
+                found = results[0] if results else None
                 if found is not None:
                     return found
             return None
@@ -411,7 +412,7 @@ async def handle_es_parse_aeat_response(
             result["tiempo_espera_envio"] = _text(_find(root, "TiempoEsperaEnvio"))
 
             # Extract line-level errors / acknowledgements
-            registros = root.findall(".//*[local-name()='RespuestaLinea']")
+            registros = root.xpath(".//*[local-name()='RespuestaLinea']")
             if registros:
                 result["respuestas_linea"] = []
                 for reg in registros:
@@ -441,7 +442,7 @@ async def handle_es_parse_aeat_response(
             result["num_correctos"] = _text(_find(root, "NumCorrectos"))
             result["num_errores"] = _text(_find(root, "NumErrores"))
 
-            lineas = root.findall(".//*[local-name()='RespuestaLinea']")
+            lineas = root.xpath(".//*[local-name()='RespuestaLinea']")
             if lineas:
                 result["respuestas_linea"] = []
                 for linea_elem in lineas:

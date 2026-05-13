@@ -66,3 +66,4 @@ tests/fixtures/*.pdf
 
 # Claude Code (local settings, memory, session data)
 .claude/
+audit/report.json

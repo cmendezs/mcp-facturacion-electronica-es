@@ -486,7 +486,7 @@ async def handle_es_validate_verifactu_record(
         warnings: list[str] = []
 
         def _req(tag: str) -> None:
-            if root.find(f".//*[local-name()='{tag}']") is None:
+            if not root.xpath(f".//*[local-name()='{tag}']"):
                 errors.append(f"Elemento obligatorio ausente: <{tag}>")
 
         # Check mandatory VERI*FACTU elements
