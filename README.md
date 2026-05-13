@@ -694,6 +694,116 @@ uv run pytest --cov=mcp_facturacion_electronica_es --cov-report=term-missing
 
 ---
 
+## Hoja de ruta
+
+Los elementos pendientes se han extraído directamente de los marcadores `[NEED]` presentes en el código fuente. Cada versión es un prerequisito de la siguiente y debe pasar el audit gate (`make audit`) antes de publicarse.
+
+### v0.1.0 (actual) — Scaffold y generación local
+
+Herramientas implementadas con XML válido generado localmente, validación estructural, lógica de régimen y firma XAdES. Sin envíos a plataformas externas confirmados contra entornos reales.
+
+---
+
+### v0.2.0 — Bundle de esquemas XSD y correcciones de protocolo
+
+**Validación XSD completa (ahora solo estructural):**
+
+| Tarea | Archivo | Referencia normativa |
+|---|---|---|
+| Descargar XSD v1.0 VERI\*FACTU en `specs/verifactu/` | `tools/verifactu.py` | BOE-A-2024-22138 (Orden HAC/1177/2024) |
+| Descargar XSD Facturae 3.2.2 en `specs/facturae/` | `tools/facturae.py` | facturae.gob.es |
+| Descargar XSD TicketBAI Álava v1.2 en `specs/ticketbai/araba/` | `tools/ticketbai.py` | batuz.eus |
+| Descargar XSD TicketBAI Gipuzkoa v1.2 en `specs/ticketbai/gipuzkoa/` | `tools/ticketbai.py` | gipuzkoa.eus |
+| Descargar XSD TicketBAI Bizkaia v2.1 en `specs/ticketbai/bizkaia/` | `tools/ticketbai.py` | bizkaia.eus |
+
+**Políticas de firma XAdES:**
+
+| Tarea | Archivo |
+|---|---|
+| Calcular SHA-256 del PDF de política Facturae (Orden EHA/962/2007) y asignar `FACTURAE_POLICY_HASH` en `_helpers.py` | `_helpers.py`, `tools/facturae.py` |
+| Obtener y asignar los hash SHA-256 de las políticas provinciales TicketBAI (Álava, Gipuzkoa, Bizkaia) en `TICKETBAI_POLICY_IDS` | `_helpers.py`, `tools/ticketbai.py` |
+| Verificar los tres URI de política TicketBAI contra la documentación técnica oficial de cada provincia | `_helpers.py` |
+
+**Correcciones de protocolo:**
+
+| Tarea | Archivo |
+|---|---|
+| Verificar el algoritmo HuellaTBAI contra la especificación técnica oficial (¿bytes en crudo, Base64 decodificado o texto?) | `tools/ticketbai.py` |
+| Rellenar el elemento `Claves` de TicketBAI con los tipos de factura correctos | `tools/ticketbai.py` |
+| Añadir `HoraExpedicionFactura` como parámetro de entrada en `es__generate_ticketbai_xml` | `tools/ticketbai.py` |
+| Confirmar el formato exacto y los parámetros de la URL del QR VERI\*FACTU (Art. 10 HAC/1177/2024) | `tools/verifactu.py` |
+| Añadir campos IBAN y BIC al bloque `AccountToBeCredited` de Facturae 3.2.2 | `tools/facturae.py` |
+
+---
+
+### v0.3.0 — Verificación de endpoints y sandbox
+
+**AEAT — VERI\*FACTU:**
+
+| Tarea | Archivo |
+|---|---|
+| Verificar la URL del endpoint sandbox de VERI\*FACTU una vez que la AEAT abra el entorno de pruebas | `tools/verifactu.py`, `_helpers.py` |
+| Confirmar la URL de producción de VERI\*FACTU contra la guía técnica publicada por la AEAT | `_helpers.py` |
+
+**AEAT — SII:**
+
+| Tarea | Archivo |
+|---|---|
+| Confirmar la URL del sandbox SII (¿`www7` o `www10`?) contra la guía técnica SII v3.0 | `_helpers.py`, `tools/sii.py` |
+| Validar la estructura del SOAP envelope contra el sandbox SII v3.0 de la AEAT | `tools/sii.py` |
+
+**FACe:**
+
+| Tarea | Archivo |
+|---|---|
+| Verificar la ruta base de la API FACe B2B v2 (puede haber cambiado en 2025) | `_helpers.py` |
+| Verificar la URL del endpoint OAuth2 de FACe para sandbox y producción | `tools/facturae.py` |
+| Validar el flujo OAuth2 completo de FACe contra credenciales reales del sandbox | `tools/facturae.py` |
+
+**TicketBAI:**
+
+| Tarea | Archivo |
+|---|---|
+| Verificar el endpoint sandbox de Álava (¿mismo que producción con NIF de prueba?) | `_helpers.py` |
+| Verificar la ruta de la API LROE de Bizkaia (esquema de envío diferente al resto) | `_helpers.py` |
+| Confirmar el método de autenticación por provincia (certificado MTLS, API key, etc.) | `tools/ticketbai.py` |
+
+---
+
+### v0.4.0 — Cadena completa y lotes SII correctos
+
+| Tarea | Archivo | Detalle |
+|---|---|---|
+| Almacenar y propagar `IDEmisorFacturaAnterior`, `NumSerieFacturaAnterior` y `FechaAnterior` para el encadenamiento completo de VERI\*FACTU | `tools/verifactu.py` | Actualmente solo se encadena la `Huella`; la especificación exige también los identificadores del registro anterior |
+| Fusionar múltiples registros `RegistroLRFacturas` en un único `SuministroLRFacturasEmitidas` para el lote SII real | `tools/sii.py` | El comportamiento actual envía cada registro por separado |
+| Construir el envelope SOAP `ConsultaFactInformadasEmitidas` / `ConsultaFactInformadasRecibidas` con filtro por `IDFactura` en `es__query_sii_status` | `tools/sii.py` | Actualmente envía una petición GET genérica |
+| Documentar o implementar el flujo de firma XAdES del registro VERI\*FACTU antes del envío | `tools/verifactu.py` | El registro generado por `es__generate_verifactu_record` debe firmarse antes de enviarse a la AEAT |
+| Parsear la respuesta AEAT en el handler `es__submit_verifactu_to_aeat` usando `es__parse_aeat_response` | `tools/verifactu.py` | Actualmente devuelve el texto crudo |
+
+---
+
+### v0.5.0 — Crea y Crece B2B + endurecimiento del audit
+
+| Tarea | Archivo | Detalle |
+|---|---|---|
+| Confirmar los requisitos de formato B2B (UBL 2.1 vs. Facturae 3.2.2) una vez publicado el reglamento de desarrollo de la Ley 18/2022 | `tools/b2b.py` | El reglamento está pendiente de publicación a fecha de mayo 2026 |
+| Actualizar `_INTENTIONAL_OVERRIDES` y `_CORE_MODULES_TO_CHECK` en el audit una vez que la API pública de `mcp-einvoicing-core` esté finalizada | `audit/audit_vs_core.py` | Reducirá los 66 avisos actuales de CHECK 1 |
+| Sustituir el parser de versiones PEP 440 artesanal por `packaging.version` | `audit/audit_vs_core.py` | El parser actual solo soporta `>=X` y `<Y` |
+| Actualizar CHECK 5 con las comprobaciones adicionales del registro de categorías de herramientas de `mcp-einvoicing-core` | `audit/audit_vs_core.py` | — |
+
+---
+
+### v1.0.0 — Preparado para producción
+
+- Todas las verificaciones de sandbox completadas
+- Todas las validaciones XSD habilitadas (specs/ poblado)
+- Cobertura completa del mandato VERI\*FACTU (enero y julio 2027)
+- Software TicketBAI certificado por las tres provincias vascas
+- Reglamento Crea y Crece B2B publicado e implementado
+- Audit gate sin ningún aviso (exit code 0)
+
+---
+
 ## Contribuir
 
 Abra un issue antes de iniciar trabajo significativo. Para lógica de utilidad reutilizable

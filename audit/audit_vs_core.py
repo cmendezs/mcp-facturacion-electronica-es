@@ -481,16 +481,24 @@ def run_check_3() -> CheckResult:
         ))
         return result
 
+    # Fields may be Pydantic model_fields OR @property descriptors (inherited aliases).
+    # SpanishInvoice exposes EN 16931 names as properties mapping to core field names.
     model_fields = set(invoice_cls.model_fields.keys())
 
+    def _has_field(cls: type, name: str) -> bool:
+        """True if name is a Pydantic field or a property/attribute on the class."""
+        if name in model_fields:
+            return True
+        return isinstance(getattr(cls, name, None), property) or hasattr(cls, name)
+
     for field_name, description in _CORE_MANDATORY_FIELDS.items():
-        if field_name in model_fields:
+        if _has_field(invoice_cls, field_name):
             result.findings.append(CheckFinding(
                 check_id="CHECK_3",
                 tag="[OK]",
                 severity=SEVERITY_OK,
                 symbol=f"SpanishInvoice.{field_name}",
-                message=f"Mandatory field present. {description}",
+                message=f"Mandatory field present (field or property). {description}",
             ))
         else:
             result.findings.append(CheckFinding(
