@@ -55,9 +55,6 @@ dev = [
     "types-qrcode>=0.0.5",
 ]
 
-[tool.uv.sources]
-mcp-einvoicing-core = { workspace = true }
-
 [project.scripts]
 mcp-facturacion-electronica-es = "mcp_facturacion_electronica_es.server:main"
 
