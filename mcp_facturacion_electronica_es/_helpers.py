@@ -9,6 +9,7 @@ import json
 import logging
 import os
 from decimal import Decimal
+from types import MappingProxyType
 from typing import Any
 
 import mcp.types as types
@@ -118,8 +119,8 @@ def ticketbai_env() -> str:
 # AEAT endpoint registry
 # ---------------------------------------------------------------------------
 
-#: VERI*FACTU submission endpoints
-VERIFACTU_ENDPOINTS: dict[str, str] = {
+#: VERI*FACTU submission endpoints (immutable — MappingProxyType prevents runtime mutation)
+VERIFACTU_ENDPOINTS: MappingProxyType[str, str] = MappingProxyType({
     "sandbox": (
         "https://prewww2.aeat.es/wlpl/TIKE-CONT/ws/SistemaFacturacion/FactSistemaFacturacion"
     ),
@@ -128,10 +129,10 @@ VERIFACTU_ENDPOINTS: dict[str, str] = {
         "/wlpl/TIKE-CONT/ws/SistemaFacturacion/FactSistemaFacturacion"
     ),
     # [NEED: verify production URL against published AEAT technical guide]
-}
+})
 
-#: SII issued-invoice submission endpoints
-SII_ISSUED_ENDPOINTS: dict[str, str] = {
+#: SII issued-invoice submission endpoints (immutable)
+SII_ISSUED_ENDPOINTS: MappingProxyType[str, str] = MappingProxyType({
     "sandbox": (
         "https://www7.aeat.es/wlpl/BURT-JDIT/ws/fe/SiiEndPointFacultativoRecepcion"
     ),
@@ -140,10 +141,10 @@ SII_ISSUED_ENDPOINTS: dict[str, str] = {
         "/wlpl/BURT-JDIT/ws/fe/SiiEndPointFacultativoRecepcion"
     ),
     # [NEED: verify sandbox URL — AEAT may use www7 or www10]
-}
+})
 
-#: SII received-invoice submission endpoints
-SII_RECEIVED_ENDPOINTS: dict[str, str] = {
+#: SII received-invoice submission endpoints (immutable)
+SII_RECEIVED_ENDPOINTS: MappingProxyType[str, str] = MappingProxyType({
     "sandbox": (
         "https://www7.aeat.es/wlpl/BURT-JDIT/ws/fr/SiiEndPointFacultativoRecepcion"
     ),
@@ -151,32 +152,32 @@ SII_RECEIVED_ENDPOINTS: dict[str, str] = {
         "https://www2.agenciatributaria.gob.es"
         "/wlpl/BURT-JDIT/ws/fr/SiiEndPointFacultativoRecepcion"
     ),
-}
+})
 
-#: FACe B2B REST API v2 base URLs
-FACE_BASE_URLS: dict[str, str] = {
+#: FACe B2B REST API v2 base URLs (immutable)
+FACE_BASE_URLS: MappingProxyType[str, str] = MappingProxyType({
     "sandbox": "https://se-face.redsara.es/factura-face-b2b-api/api/v2",
     "production": "https://face.gob.es/factura-face-b2b-api/api/v2",
     # [NEED: verify — FACe may have changed API base path in 2025]
-}
+})
 
-#: TicketBAI provincial submission endpoints
-TICKETBAI_ENDPOINTS: dict[str, dict[str, str]] = {
-    "araba": {
+#: TicketBAI provincial submission endpoints (immutable — nested proxies prevent deep mutation)
+TICKETBAI_ENDPOINTS: MappingProxyType[str, MappingProxyType[str, str]] = MappingProxyType({
+    "araba": MappingProxyType({
         "sandbox": "https://batuz.eus/BATUZ/TicketBAI/alta",
         "production": "https://batuz.eus/BATUZ/TicketBAI/alta",
         # [NEED: verify Álava sandbox — may be the same as production with a test NIF]
-    },
-    "gipuzkoa": {
+    }),
+    "gipuzkoa": MappingProxyType({
         "sandbox": "https://tbai.prep.gipuzkoa.eus/sarrerak/alta/",
         "production": "https://tbai.egoitza.gipuzkoa.eus/sarrerak/alta/",
-    },
-    "bizkaia": {
+    }),
+    "bizkaia": MappingProxyType({
         "sandbox": "https://pruebasapi.ebizkaia.eus/LROE/facturas/1.0/facturas",
         "production": "https://api.ebizkaia.eus/LROE/facturas/1.0/facturas",
         # [NEED: verify Bizkaia LROE path — Bizkaia uses a different submission scheme]
-    },
-}
+    }),
+})
 
 #: Facturae XAdES-EPES signature policy (Orden EHA/962/2007)
 FACTURAE_POLICY_ID = (
@@ -186,8 +187,8 @@ FACTURAE_POLICY_ID = (
 #: [NEED: compute SHA-256 of the policy PDF from facturae.gob.es and set here]
 FACTURAE_POLICY_HASH: str | None = None
 
-#: TicketBAI signature policy URIs per province
-TICKETBAI_POLICY_IDS: dict[str, str] = {
+#: TicketBAI signature policy URIs per province (immutable)
+TICKETBAI_POLICY_IDS: MappingProxyType[str, str] = MappingProxyType({
     "araba": (
         "https://www.araba.eus/tbai/2021061/tbai-TBXEko+sinadura+politika+v1.0+esAN.pdf"
     ),
@@ -197,4 +198,4 @@ TICKETBAI_POLICY_IDS: dict[str, str] = {
     ),
     "bizkaia": "https://www.bizkaia.eus/ogasun/batuz/TicketBAI/ca_bizkaiako_sinadura_politika_1_0.pdf",
     # [NEED: verify all three policy URIs from official provincial technical documentation]
-}
+})

@@ -19,6 +19,7 @@ from typing import Any
 
 import mcp.types as types
 from lxml import etree
+from mcp_einvoicing_core.xml_utils import safe_fromstring
 
 from mcp_facturacion_electronica_es._helpers import err, ok
 from mcp_facturacion_electronica_es.models.es import (
@@ -382,7 +383,7 @@ async def handle_es_parse_aeat_response(
 
         xml_bytes = xml_str.encode() if isinstance(xml_str, str) else xml_str
         try:
-            root = etree.fromstring(xml_bytes)
+            root = safe_fromstring(xml_bytes)
         except etree.XMLSyntaxError as exc:
             return err(f"XML inválido: {exc}", "XML_PARSE_ERROR")
 

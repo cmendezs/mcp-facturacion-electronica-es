@@ -20,15 +20,18 @@ XAdES-EPES policy (Orden EHA/962/2007):
 from __future__ import annotations
 
 import logging
-import os
 from decimal import Decimal
 from typing import Any
 
 import mcp.types as types
 from lxml import etree
+from mcp_einvoicing_core.base_server import assert_not_read_only
+from mcp_einvoicing_core.confirmation import ConfirmationGate
 from mcp_einvoicing_core.digital_signature import XAdESEPESSigner, XAdESSignerConfig
 from mcp_einvoicing_core.exceptions import EInvoicingError
 from mcp_einvoicing_core.models import InvoiceDocument
+from mcp_einvoicing_core.signer_client import SignerClient
+from mcp_einvoicing_core.xml_utils import safe_fromstring
 
 from mcp_facturacion_electronica_es._helpers import (
     FACE_BASE_URLS,
@@ -40,6 +43,7 @@ from mcp_facturacion_electronica_es._helpers import (
     ok,
     parse_invoice,
 )
+from mcp_facturacion_electronica_es.config import aeat_settings
 
 logger = logging.getLogger(__name__)
 
@@ -380,28 +384,53 @@ async def handle_es_sign_facturae_xades(
 ) -> list[types.TextContent]:
     try:
         xml_str = arguments.get("xml", "")
-        cert_path = arguments.get("cert_path", "")
         if not xml_str:
             return err("xml is required", "MISSING_PARAM")
-        if not cert_path:
-            return err("cert_path is required", "MISSING_PARAM")
 
-        cert_password: str | None = arguments.get("cert_password") or None
+        confirmation_token: str | None = arguments.get("confirmation_token") or None
+        assert_not_read_only("AEAT_READ_ONLY")
+        gate = ConfirmationGate.get_default()
+        if not gate.is_confirmed(confirmation_token):
+            return ok(gate.pending_response(
+                action="es__sign_facturae_xades",
+                summary=(
+                    "Apply XAdES-EPES signature to a Facturae XML document using the "
+                    "FNMT-RCM PKCS#12 certificate. The signed XML will contain a "
+                    "legally binding electronic signature."
+                ),
+                token=confirmation_token,
+            ))
+
         policy_id: str = arguments.get("signature_policy_id") or FACTURAE_POLICY_ID
         policy_hash: str | None = arguments.get("signature_policy_hash") or FACTURAE_POLICY_HASH
-
-        config = XAdESSignerConfig(
-            cert_path=cert_path,
-            cert_password=cert_password,
-            signature_policy_id=policy_id,
-            signature_policy_hash=policy_hash,
-        )
-        signer = XAdESEPESSigner(config)
-
         xml_bytes = xml_str.encode() if isinstance(xml_str, str) else xml_str
-        signed_bytes = signer.sign(xml_bytes)
 
-        logger.info("Facturae XAdES-EPES signature applied with cert %s", cert_path)
+        if SignerClient.is_configured():
+            signer_client = SignerClient.from_env()
+            signed_bytes = await signer_client.sign(
+                xml_bytes,
+                signature_policy_id=policy_id,
+                signature_policy_hash=policy_hash,
+            )
+            logger.info("Facturae XAdES-EPES signature applied via signer microservice")
+        else:
+            cert_path = arguments.get("cert_path", "")
+            if not cert_path:
+                return err(
+                    "cert_path is required when signer microservice is not configured "
+                    "(EINVOICING_SIGNER_SOCKET not set)",
+                    "MISSING_PARAM",
+                )
+            cert_password: str | None = arguments.get("cert_password") or None
+            config = XAdESSignerConfig(
+                cert_path=cert_path,
+                cert_password=cert_password,
+                signature_policy_id=policy_id,
+                signature_policy_hash=policy_hash,
+            )
+            signer = XAdESEPESSigner(config)
+            signed_bytes = signer.sign(xml_bytes)
+            logger.info("Facturae XAdES-EPES signature applied with cert %s", cert_path)
 
         notes: list[str] = []
         if not policy_hash:
@@ -416,6 +445,7 @@ async def handle_es_sign_facturae_xades(
         }
         if notes:
             result["notes"] = notes
+        gate.consume(confirmation_token)
         return ok(result)
 
     except ImportError as exc:
@@ -438,6 +468,7 @@ async def handle_es_submit_to_face(
         admin_unit = arguments.get("administrative_unit", "")
         accounting_office = arguments.get("accounting_office", "")
         management_body = arguments.get("management_body", "")
+        confirmation_token: str | None = arguments.get("confirmation_token") or None
 
         for name, val in [
             ("xml", xml_str), ("administrative_unit", admin_unit),
@@ -446,8 +477,22 @@ async def handle_es_submit_to_face(
             if not val:
                 return err(f"{name} is required", "MISSING_PARAM")
 
-        client_id = os.environ.get("FACE_CLIENT_ID", "")
-        client_secret = os.environ.get("FACE_CLIENT_SECRET", "")
+        assert_not_read_only("AEAT_READ_ONLY")
+        gate = ConfirmationGate.get_default()
+        if not gate.is_confirmed(confirmation_token):
+            env_label = face_env()
+            return ok(gate.pending_response(
+                action="es__submit_to_face",
+                summary=(
+                    f"Submit Facturae XML to FACe ({env_label}) for unit "
+                    f"{admin_unit!r} / office {accounting_office!r}. "
+                    "This registers the invoice with the government B2B platform."
+                ),
+                token=confirmation_token,
+            ))
+
+        client_id = aeat_settings.face_client_id or ""
+        client_secret = aeat_settings.face_client_secret or ""
         if not client_id or not client_secret:
             return err(
                 "FACE_CLIENT_ID y FACE_CLIENT_SECRET son obligatorios.",
@@ -482,6 +527,7 @@ async def handle_es_submit_to_face(
             files={"factura": ("factura.xml", xml_bytes, "application/xml")},
         )
 
+        gate.consume(confirmation_token)
         return ok({
             "status_code": response.status_code,
             "environment": env,
@@ -503,8 +549,8 @@ async def handle_es_get_face_invoice_status(
         if not invoice_id:
             return err("invoice_id is required", "MISSING_PARAM")
 
-        client_id = os.environ.get("FACE_CLIENT_ID", "")
-        client_secret = os.environ.get("FACE_CLIENT_SECRET", "")
+        client_id = aeat_settings.face_client_id or ""
+        client_secret = aeat_settings.face_client_secret or ""
         if not client_id or not client_secret:
             return err("FACE_CLIENT_ID y FACE_CLIENT_SECRET son obligatorios.", "MISSING_CONFIG")
 
@@ -555,7 +601,7 @@ async def handle_es_validate_facturae_schema(
 
         xml_bytes = xml_str.encode() if isinstance(xml_str, str) else xml_str
         try:
-            root = etree.fromstring(xml_bytes)
+            root = safe_fromstring(xml_bytes)
         except etree.XMLSyntaxError as exc:
             return ok({
                 "valid": False,
