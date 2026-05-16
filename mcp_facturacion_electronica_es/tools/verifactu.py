@@ -19,16 +19,19 @@ from __future__ import annotations
 
 import hashlib
 import logging
-import os
 from datetime import datetime
 from decimal import Decimal
 from typing import Any
 
 import mcp.types as types
 from lxml import etree
+from mcp_einvoicing_core.base_server import assert_not_read_only
+from mcp_einvoicing_core.confirmation import ConfirmationGate
 from mcp_einvoicing_core.exceptions import EInvoicingError
 from mcp_einvoicing_core.models import InvoiceDocument
 from mcp_einvoicing_core.qr import generate_qr_png_base64
+from mcp_einvoicing_core.signer_client import SignerClient
+from mcp_einvoicing_core.xml_utils import safe_fromstring
 
 from mcp_facturacion_electronica_es._helpers import (
     VERIFACTU_ENDPOINTS,
@@ -39,6 +42,7 @@ from mcp_facturacion_electronica_es._helpers import (
     ok,
     parse_invoice,
 )
+from mcp_facturacion_electronica_es.config import aeat_settings
 from mcp_facturacion_electronica_es.models.es import VerifactuInvoiceType
 
 logger = logging.getLogger(__name__)
@@ -473,7 +477,7 @@ async def handle_es_validate_verifactu_record(
 
         # --- Structural parse ---
         try:
-            root = etree.fromstring(xml_bytes)
+            root = safe_fromstring(xml_bytes)
         except etree.XMLSyntaxError as exc:
             return ok({
                 "valid": False,
@@ -537,26 +541,65 @@ async def handle_es_submit_verifactu_to_aeat(
     arguments: dict[str, Any],
 ) -> list[types.TextContent]:
     try:
-        from mcp_einvoicing_core.http_client import AuthMode, BaseEInvoicingClient
-
         xml_str = arguments.get("xml", "")
         nif = arguments.get("nif", "")
+        confirmation_token: str | None = arguments.get("confirmation_token") or None
         if not xml_str:
             return err("xml is required", "MISSING_PARAM")
         if not nif:
             return err("nif is required", "MISSING_PARAM")
 
-        cert_path = os.environ.get("AEAT_CERTIFICATE_PATH")
-        cert_password = os.environ.get("AEAT_CERTIFICATE_PASSWORD")
-        if not cert_path:
-            return err(
-                "AEAT_CERTIFICATE_PATH no está configurado. "
-                "Proporcione la ruta al certificado FNMT-RCM PKCS#12.",
-                "MISSING_CONFIG",
-            )
+        assert_not_read_only("AEAT_READ_ONLY")
+        gate = ConfirmationGate.get_default()
+        if not gate.is_confirmed(confirmation_token):
+            env_label = aeat_env()
+            return ok(gate.pending_response(
+                action="es__submit_verifactu_to_aeat",
+                summary=(
+                    f"Submit VERI*FACTU XML to AEAT ({env_label}) for NIF {nif!r}. "
+                    "This action reports the invoice to the Tax Agency and cannot be retracted."
+                ),
+                token=confirmation_token,
+            ))
 
         env = aeat_env()
         base_url = VERIFACTU_ENDPOINTS[env]
+        xml_bytes = xml_str.encode() if isinstance(xml_str, str) else xml_str
+
+        if SignerClient.is_configured():
+            signer = SignerClient.from_env()
+            result = await signer.mtls_submit_files(
+                base_url,
+                [("xml", "registro.xml", xml_bytes, "application/xml")],
+            )
+            gate.consume(confirmation_token)
+            return ok({
+                "status_code": result["status_code"],
+                "environment": env,
+                "response_text": result["body"][:2000],
+                "note": (
+                    "Use es__parse_aeat_response to parse the response XML "
+                    "and extract EstadoEnvio and CSV."
+                ),
+            })
+
+        # Fallback: direct mTLS (legacy mode — cert lives in MCP process).
+        from mcp_einvoicing_core.http_client import AuthMode, BaseEInvoicingClient  # noqa: PLC0415
+
+        cert_path = aeat_settings.certificate_path
+        cert_password = aeat_settings.certificate_password
+        if not cert_path:
+            return err(
+                "AEAT_CERTIFICATE_PATH no está configurado. "
+                "Arranque el servicio de firma (EINVOICING_SIGNER_SOCKET) "
+                "o proporcione la ruta al certificado FNMT-RCM PKCS#12.",
+                "MISSING_CONFIG",
+            )
+        logger.warning(
+            "es__submit_verifactu_to_aeat: signer microservice not configured — "
+            "cert material is in the MCP process (security risk). "
+            "Set EINVOICING_SIGNER_SOCKET and EINVOICING_SIGNER_TOKEN."
+        )
 
         client = BaseEInvoicingClient(
             base_url=base_url,
@@ -564,8 +607,6 @@ async def handle_es_submit_verifactu_to_aeat(
             cert_path=cert_path,
             cert_password=cert_password,
         )
-
-        xml_bytes = xml_str.encode() if isinstance(xml_str, str) else xml_str
         response = await client._request(
             "POST",
             "",
@@ -573,8 +614,8 @@ async def handle_es_submit_verifactu_to_aeat(
             json=None,
             files={"xml": ("registro.xml", xml_bytes, "application/xml")},
         )
-
         # [NEED: parse AEAT VERI*FACTU response — use es__parse_aeat_response]
+        gate.consume(confirmation_token)
         return ok({
             "status_code": response.status_code,
             "environment": env,

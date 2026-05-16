@@ -18,8 +18,12 @@ from typing import Any
 
 import mcp.types as types
 from lxml import etree
+from mcp_einvoicing_core.base_server import assert_not_read_only
+from mcp_einvoicing_core.confirmation import ConfirmationGate
 from mcp_einvoicing_core.exceptions import EInvoicingError
 from mcp_einvoicing_core.models import InvoiceDocument
+from mcp_einvoicing_core.signer_client import SignerClient
+from mcp_einvoicing_core.xml_utils import safe_fromstring
 
 from mcp_facturacion_electronica_es._helpers import (
     SII_ISSUED_ENDPOINTS,
@@ -31,6 +35,7 @@ from mcp_facturacion_electronica_es._helpers import (
     ok,
     parse_invoice,
 )
+from mcp_facturacion_electronica_es.config import aeat_settings
 from mcp_facturacion_electronica_es.models.es import SIICommunicationType, SIIRecordType
 
 logger = logging.getLogger(__name__)
@@ -124,7 +129,7 @@ def build_sii_issued_record(
     suministro = etree.SubElement(body, f"{{{_SII_NS}}}SuministroLRFacturasEmitidas")
 
     cab = _build_cabecera(seller_nif, seller_name, comm_type)
-    suministro.append(etree.fromstring(etree.tostring(cab)))
+    suministro.append(safe_fromstring(etree.tostring(cab)))
 
     registro = etree.SubElement(suministro, f"{{{_SII_NS}}}RegistroLRFacturasEmitidas")
     registro.append(etree.fromstring(
@@ -192,7 +197,7 @@ def build_sii_received_record(
 
     suministro = etree.SubElement(body, f"{{{_SII_NS}}}SuministroLRFacturasRecibidas")
     cab = _build_cabecera(buyer_nif, buyer_name, comm_type)
-    suministro.append(etree.fromstring(etree.tostring(cab)))
+    suministro.append(safe_fromstring(etree.tostring(cab)))
 
     registro = etree.SubElement(suministro, f"{{{_SII_NS}}}RegistroLRFacturasRecibidas")
     registro.append(etree.fromstring(
@@ -211,7 +216,7 @@ def build_sii_received_record(
         _sub(id_otro, "ID", invoice.seller.tax_id.identifier)
     _sub(idf, "NumSerieFacturaEmisor", invoice.number)
     _sub(idf, "FechaExpedicionFacturaEmisor", fmt_date_es(invoice.date))
-    registro.append(etree.fromstring(etree.tostring(idf)))
+    registro.append(safe_fromstring(etree.tostring(idf)))
 
     factura_rec = etree.SubElement(registro, f"{{{_SII_NS}}}FacturaRecibida")
     _sub(factura_rec, "TipoFactura", invoice.document_type or "F1")
@@ -419,6 +424,7 @@ async def handle_es_submit_sii_batch(
         records = arguments.get("records", [])
         record_type_str = arguments.get("record_type", "issued")
         fiscal_year = arguments.get("fiscal_year")
+        confirmation_token: str | None = arguments.get("confirmation_token") or None
 
         if not records:
             return err("records is required and must not be empty", "MISSING_PARAM")
@@ -436,21 +442,42 @@ async def handle_es_submit_sii_batch(
                 "BATCH_TOO_LARGE",
             )
 
-        cert_path = os.environ.get("AEAT_CERTIFICATE_PATH")
-        cert_password = os.environ.get("AEAT_CERTIFICATE_PASSWORD")
-        if not cert_path:
-            return err("AEAT_CERTIFICATE_PATH no está configurado.", "MISSING_CONFIG")
+        assert_not_read_only("AEAT_READ_ONLY")
+        gate = ConfirmationGate.get_default()
+        if not gate.is_confirmed(confirmation_token):
+            env_label = aeat_env()
+            return ok(gate.pending_response(
+                action="es__submit_sii_batch",
+                summary=(
+                    f"Submit {len(records)} SII {record_type_str} record(s) to AEAT "
+                    f"({env_label}, ejercicio {fiscal_year}). "
+                    "SII records are immediately reported to the Tax Agency."
+                ),
+                token=confirmation_token,
+            ))
 
         env = aeat_env()
         endpoints = SII_ISSUED_ENDPOINTS if record_type == SIIRecordType.issued else SII_RECEIVED_ENDPOINTS
         base_url = endpoints[env]
 
-        client = BaseEInvoicingClient(
-            base_url=base_url,
-            auth_mode=AuthMode.MTLS,
-            cert_path=cert_path,
-            cert_password=cert_password,
-        )
+        use_signer = SignerClient.is_configured()
+        if use_signer:
+            signer = SignerClient.from_env()
+        else:
+            cert_path = aeat_settings.certificate_path
+            cert_password = aeat_settings.certificate_password
+            if not cert_path:
+                return err("AEAT_CERTIFICATE_PATH no está configurado.", "MISSING_CONFIG")
+            logger.warning(
+                "es__submit_sii_batch: signer microservice not configured — "
+                "cert material is in the MCP process (security risk)."
+            )
+            client = BaseEInvoicingClient(
+                base_url=base_url,
+                auth_mode=AuthMode.MTLS,
+                cert_path=cert_path,
+                cert_password=cert_password,
+            )
 
         # For simplicity, submit records one by one.
         # [NEED: merge multiple RegistroLRFacturas into a single SuministroLR for true batch]
@@ -458,18 +485,30 @@ async def handle_es_submit_sii_batch(
         for i, xml_str in enumerate(records):
             xml_bytes = xml_str.encode() if isinstance(xml_str, str) else xml_str
             try:
-                response = await client._request(
-                    "POST", "",
-                    files={"xml": (f"sii_{i}.xml", xml_bytes, "text/xml")},
-                )
-                results.append({
-                    "index": i,
-                    "status_code": response.status_code,
-                    "response": response.text[:500],
-                })
+                if use_signer:
+                    resp = await signer.mtls_submit_files(  # type: ignore[possibly-undefined]
+                        base_url,
+                        [("xml", f"sii_{i}.xml", xml_bytes, "text/xml")],
+                    )
+                    results.append({
+                        "index": i,
+                        "status_code": resp["status_code"],
+                        "response": resp["body"][:500],
+                    })
+                else:
+                    response = await client._request(  # type: ignore[possibly-undefined]
+                        "POST", "",
+                        files={"xml": (f"sii_{i}.xml", xml_bytes, "text/xml")},
+                    )
+                    results.append({
+                        "index": i,
+                        "status_code": response.status_code,
+                        "response": response.text[:500],
+                    })
             except Exception as exc:
                 results.append({"index": i, "error": str(exc)})
 
+        gate.consume(confirmation_token)
         return ok({
             "environment": env,
             "record_type": record_type.value,

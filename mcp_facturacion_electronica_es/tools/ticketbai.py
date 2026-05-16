@@ -19,15 +19,18 @@ from __future__ import annotations
 import base64
 import hashlib
 import logging
-import os
 from decimal import Decimal
 from typing import Any
 
 import mcp.types as types
 from lxml import etree
+from mcp_einvoicing_core.base_server import assert_not_read_only
+from mcp_einvoicing_core.confirmation import ConfirmationGate
 from mcp_einvoicing_core.digital_signature import XAdESEPESSigner, XAdESSignerConfig
 from mcp_einvoicing_core.exceptions import EInvoicingError
 from mcp_einvoicing_core.models import InvoiceDocument
+from mcp_einvoicing_core.signer_client import SignerClient
+from mcp_einvoicing_core.xml_utils import safe_fromstring
 
 from mcp_facturacion_electronica_es._helpers import (
     TICKETBAI_ENDPOINTS,
@@ -39,6 +42,7 @@ from mcp_facturacion_electronica_es._helpers import (
     parse_invoice,
     ticketbai_env,
 )
+from mcp_facturacion_electronica_es.config import ticketbai_settings
 from mcp_facturacion_electronica_es.models.es import TicketBAIProvince
 
 logger = logging.getLogger(__name__)
@@ -339,6 +343,7 @@ async def handle_es_submit_ticketbai(
         xml_str = arguments.get("xml", "")
         province_str = arguments.get("province", "")
         nif = arguments.get("nif", "")
+        confirmation_token: str | None = arguments.get("confirmation_token") or None
 
         if not xml_str:
             return err("xml is required", "MISSING_PARAM")
@@ -352,13 +357,47 @@ async def handle_es_submit_ticketbai(
         except ValueError:
             return err(f"Invalid province: {province_str!r}")
 
-        cert_path = os.environ.get("TICKETBAI_CERTIFICATE_PATH")
-        cert_password = os.environ.get("TICKETBAI_CERTIFICATE_PASSWORD")
-        if not cert_path:
-            return err("TICKETBAI_CERTIFICATE_PATH no está configurado.", "MISSING_CONFIG")
+        assert_not_read_only("AEAT_READ_ONLY")
+        gate = ConfirmationGate.get_default()
+        if not gate.is_confirmed(confirmation_token):
+            env_label = ticketbai_env()
+            return ok(gate.pending_response(
+                action="es__submit_ticketbai",
+                summary=(
+                    f"Submit TicketBAI XML to {province_str} ({env_label}) for NIF {nif!r}. "
+                    "This action reports the invoice to the Provincial Treasury and cannot be retracted."
+                ),
+                token=confirmation_token,
+            ))
 
         env = ticketbai_env()
         endpoint = TICKETBAI_ENDPOINTS[province.value][env]
+        xml_bytes = xml_str.encode() if isinstance(xml_str, str) else xml_str
+
+        if SignerClient.is_configured():
+            signer = SignerClient.from_env()
+            result = await signer.mtls_submit_files(
+                endpoint,
+                [("xml", "ticketbai.xml", xml_bytes, "application/xml")],
+            )
+            gate.consume(confirmation_token)
+            return ok({
+                "province": province.value,
+                "environment": env,
+                "endpoint": endpoint,
+                "status_code": result["status_code"],
+                "response": result["body"][:2000],
+            })
+
+        # Fallback: direct mTLS (legacy mode — cert lives in MCP process).
+        cert_path = ticketbai_settings.certificate_path
+        cert_password = ticketbai_settings.certificate_password
+        if not cert_path:
+            return err("TICKETBAI_CERTIFICATE_PATH no está configurado.", "MISSING_CONFIG")
+        logger.warning(
+            "es__submit_ticketbai: signer microservice not configured — "
+            "cert material is in the MCP process (security risk)."
+        )
 
         client = BaseEInvoicingClient(
             base_url=endpoint,
@@ -366,14 +405,12 @@ async def handle_es_submit_ticketbai(
             cert_path=cert_path,
             cert_password=cert_password,
         )
-
-        xml_bytes = xml_str.encode() if isinstance(xml_str, str) else xml_str
         response = await client._request(
             "POST",
             "",
             files={"xml": ("ticketbai.xml", xml_bytes, "application/xml")},
         )
-
+        gate.consume(confirmation_token)
         return ok({
             "province": province.value,
             "environment": env,
@@ -408,7 +445,7 @@ async def handle_es_validate_ticketbai_schema(
 
         xml_bytes = xml_str.encode() if isinstance(xml_str, str) else xml_str
         try:
-            root = etree.fromstring(xml_bytes)
+            root = safe_fromstring(xml_bytes)
         except etree.XMLSyntaxError as exc:
             return ok({
                 "valid": False,
