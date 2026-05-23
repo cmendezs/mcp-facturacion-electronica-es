@@ -44,47 +44,59 @@ from mcp_einvoicing_core.audit import (
 # CHECK 1 configuration — country-specific constants
 # ---------------------------------------------------------------------------
 
-# Factura-e 3.2.2 is a CIUS of EN 16931. SpanishInvoice likely extends
-# EN16931Invoice but this is unverified pending a full model-tree audit.
-# Set to None to skip the canonical tree check until verified.
-# [Inference: is_en16931_family=True once SpanishInvoice model is confirmed]
+# Factura-e 3.2.2 is EN 16931-adjacent (predates the standard but maps to its semantics).
+# ES country audit 2026-05 (finding ES-SC-9) confirms:
+#   - SpanishInvoice currently extends InvoiceDocument — WRONG BASE for Factura-e pathway.
+#   - FaturaeInvoice(EN16931Invoice) must be scaffolded before this constant can be set True.
+#   - VeriFactu tools use InvoiceDocument directly (correct — VeriFactu is not EN 16931).
+# Set to None to skip the canonical tree check until FaturaeInvoice is created (Sprint 4).
+# [GAP id=ES-SC-9]
 _IS_EN16931_FAMILY: bool | None = None
 _PRIMARY_INVOICE_CLASS: tuple[str, str] | None = None
 
 _INTENTIONAL_OVERRIDES: dict[str, set[str]] = {
-    # ES uses standalone FastMCP; ABC base classes are not subclassed directly.
     "mcp_einvoicing_core.base_server": {
+        # OVERRIDE-REASON: ES uses standalone FastMCP (not EInvoicingMCPServer); ABC generator/parser/validator base classes not applicable — each tool is a standalone async function dispatched via _TOOL_HANDLERS
         "BaseDocumentGenerator",
+        # OVERRIDE-REASON: ES uses standalone FastMCP; no document parser class needed — InvoiceDocument.model_validate() used inline in _helpers.parse_invoice()
         "BaseDocumentParser",
+        # OVERRIDE-REASON: ES uses XSD structural checks in tool handlers, not the ABC validator pattern — BaseDocumentValidator not needed
         "BaseDocumentValidator",
+        # OVERRIDE-REASON: ES validates parties inline (NIF format checks), not via the ABC party validator — BasePartyValidator not used
         "BasePartyValidator",
+        # OVERRIDE-REASON: ES uses standalone FastMCP Server directly, not EInvoicingMCPServer — server.py wires tools via _TOOL_HANDLERS dict
         "EInvoicingMCPServer",
+        # OVERRIDE-REASON: ES has no lifecycle manager class — VeriFactu/SII/TicketBAI submit flows are inline in tool handlers, not in a lifecycle manager
         "BaseLifecycleManager",
+        # OVERRIDE-REASON: ES tools return plain dicts via ok()/err() helpers, not typed SubmitResult — SubmitResult not used
         "SubmitResult",
     },
-    # SchematronValidator: ES uses XSD + business-rule validation, not Schematron.
     "mcp_einvoicing_core.schematron": {
+        # OVERRIDE-REASON: ES uses XSD + business-rule validation, not Schematron — Factura-e and VeriFactu do not have Schematron rules; TicketBAI uses XSD per province
         "BaseStructuredValidator",
+        # OVERRIDE-REASON: SchematronValidator is XPath-over-XSLT; ES uses etree.XMLSchema for XSD validation instead
         "SchematronValidator",
+        # OVERRIDE-REASON: ValidationMessage / ValidationResult not used — ES validators return plain dicts with {"valid": bool, "errors": list}
         "ValidationMessage",
         "ValidationResult",
     },
-    # PDF/A-3 embedding is not required for Facturae or TicketBAI.
     "mcp_einvoicing_core.pdf": {
+        # OVERRIDE-REASON: PDF/A-3 embedding is not required for Facturae 3.2.2 or TicketBAI — neither format mandates PDF embedding
         "PDFEmbedder",
     },
-    # KSeF artefacts framework: not applicable to ES.
     "mcp_einvoicing_core.download_rules": {
+        # OVERRIDE-REASON: ES does not use the artefact-download framework (no KSeF-style spec ZIP bootstrapping) — specs are populated manually into specs/
         "DownloadSpec",
         "download_artefacts",
     },
-    # TokenCache: ES uses per-call OAuth2 or mTLS; session token caching not needed.
     "mcp_einvoicing_core.http_client": {
+        # OVERRIDE-REASON: ES uses per-call mTLS (AEAT) or OAuth2 (FACe) without session token caching — TokenCache not applicable to certificate-based auth flows
         "TokenCache",
     },
-    # PartyValidationError / SchematronValidationError: not raised by ES tools.
     "mcp_einvoicing_core.exceptions": {
+        # OVERRIDE-REASON: PartyValidationError not raised by ES tools — party validation is inline with plain EInvoicingError
         "PartyValidationError",
+        # OVERRIDE-REASON: SchematronValidationError not raised — ES uses XSD validation, not Schematron; errors returned as plain dicts
         "SchematronValidationError",
     },
 }
