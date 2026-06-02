@@ -4,8 +4,8 @@ build-backend = "hatchling.build"
 
 [project]
 name = "mcp-facturacion-electronica-es"
-version = "0.1.0"
-description = "MCP server for Spanish electronic invoicing (VERI*FACTU, Facturae/FACe, SII, TicketBAI, Crea y Crece B2B)"
+version = "0.2.0"
+description = "MCP server for Spanish electronic invoicing (VERI*FACTU, Facturae/FACe, SII, Crea y Crece B2B)"
 readme = "README.md"
 license = { text = "Apache-2.0" }
 authors = [{ name = "cmendezs" }]

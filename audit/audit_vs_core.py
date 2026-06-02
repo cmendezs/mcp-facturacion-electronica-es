@@ -72,7 +72,7 @@ _INTENTIONAL_OVERRIDES: dict[str, set[str]] = {
         "SubmitResult",
     },
     "mcp_einvoicing_core.schematron": {
-        # OVERRIDE-REASON: ES uses XSD + business-rule validation, not Schematron — Factura-e and VeriFactu do not have Schematron rules; TicketBAI uses XSD per province
+        # OVERRIDE-REASON: ES uses XSD + business-rule validation, not Schematron — Factura-e and VeriFactu do not have Schematron rules
         "BaseStructuredValidator",
         # OVERRIDE-REASON: SchematronValidator is XPath-over-XSLT; ES uses etree.XMLSchema for XSD validation instead
         "SchematronValidator",
@@ -81,7 +81,7 @@ _INTENTIONAL_OVERRIDES: dict[str, set[str]] = {
         "ValidationResult",
     },
     "mcp_einvoicing_core.pdf": {
-        # OVERRIDE-REASON: PDF/A-3 embedding is not required for Facturae 3.2.2 or TicketBAI — neither format mandates PDF embedding
+        # OVERRIDE-REASON: PDF/A-3 embedding is not required for Facturae 3.2.2 or VeriFactu — neither format mandates PDF embedding
         "PDFEmbedder",
     },
     "mcp_einvoicing_core.download_rules": {
@@ -107,7 +107,7 @@ _ES_MODULES: list[str] = [
     "mcp_facturacion_electronica_es.tools.verifactu",
     "mcp_facturacion_electronica_es.tools.facturae",
     "mcp_facturacion_electronica_es.tools.sii",
-    "mcp_facturacion_electronica_es.tools.ticketbai",
+    # tools.ticketbai is intentionally absent — TicketBAI (Pais Vasco) is out of scope
     "mcp_facturacion_electronica_es.tools.b2b",
     "mcp_facturacion_electronica_es.tools.utils",
 ]
@@ -137,10 +137,8 @@ _REQUIRED_TOOL_CATEGORIES: dict[str, str] = {
     "es__submit_sii_batch":                "Enviar lote de facturas SII al endpoint SOAP AEAT",
     "es__query_sii_status":                "Consultar estado de lote SII enviado",
     "es__generate_sii_correction":         "Generar registro de modificación (A1) o baja (A4) SII",
-    # TicketBAI
-    "es__generate_ticketbai_xml":          "Generar XML TicketBAI con firma XAdES y HuellaTBAI",
-    "es__submit_ticketbai":                "Enviar registro TicketBAI a la autoridad provincial vasca",
-    "es__validate_ticketbai_schema":       "Validar XML TicketBAI contra XSD provincial correcto",
+    # TicketBAI is explicitly out of scope for this package (confirmed 2026-05-31).
+    # es__generate_ticketbai_xml, es__submit_ticketbai, es__validate_ticketbai_schema — removed.
     # Crea y Crece / B2B
     "es__generate_b2b_einvoice_es":        "Generar factura B2B EN 16931 (UBL 2.1 o Facturae 3.2.2)",
     "es__check_b2b_mandate_applicability": "Determinar régimen aplicable según RD 254/2025",
@@ -165,9 +163,7 @@ _TOOL_MODULE_ATTRS: list[tuple[str, str]] = [
     ("mcp_facturacion_electronica_es.tools.sii",       "TOOL_ES_SUBMIT_SII_BATCH"),
     ("mcp_facturacion_electronica_es.tools.sii",       "TOOL_ES_QUERY_SII_STATUS"),
     ("mcp_facturacion_electronica_es.tools.sii",       "TOOL_ES_GENERATE_SII_CORRECTION"),
-    ("mcp_facturacion_electronica_es.tools.ticketbai", "TOOL_ES_GENERATE_TICKETBAI_XML"),
-    ("mcp_facturacion_electronica_es.tools.ticketbai", "TOOL_ES_SUBMIT_TICKETBAI"),
-    ("mcp_facturacion_electronica_es.tools.ticketbai", "TOOL_ES_VALIDATE_TICKETBAI_SCHEMA"),
+    # TicketBAI tools removed — out of scope (confirmed 2026-05-31)
     ("mcp_facturacion_electronica_es.tools.b2b",       "TOOL_ES_GENERATE_B2B_EINVOICE_ES"),
     ("mcp_facturacion_electronica_es.tools.b2b",       "TOOL_ES_CHECK_B2B_MANDATE_APPLICABILITY"),
     ("mcp_facturacion_electronica_es.tools.utils",     "TOOL_ES_DETECT_REGIONAL_REGIME"),
@@ -351,12 +347,13 @@ def run_check_5() -> CheckResult:
                 message=f"All {len(all_tools)} tools have matching handlers.",
             ))
 
-    # 5c: SpanishRegime enum covers required values
+    # 5c: SpanishRegime enum covers required AEAT-scope values
+    # TicketBAI and NaTicket are intentionally absent — out of scope (confirmed 2026-05-31)
     models_mod, _ = _try_import("mcp_facturacion_electronica_es.models.es")
     if models_mod:
         regime_cls = getattr(models_mod, "SpanishRegime", None)
         if regime_cls:
-            required_regimes = {"VERIFACTU", "TICKETBAI", "NATICKET", "VERIFACTU_SII"}
+            required_regimes = {"VERIFACTU", "VERIFACTU_SII"}
             actual_regimes = {r.name for r in regime_cls}
             for r in sorted(required_regimes):
                 tag = "[OK]" if r in actual_regimes else "[MISSING_REGIME]"
@@ -370,6 +367,17 @@ def run_check_5() -> CheckResult:
                         else f"Required regime '{r}' is not defined in SpanishRegime enum."
                     ),
                 ))
+            # TICKETBAI and NATICKET must NOT be present (out of scope)
+            for r in ("TICKETBAI", "NATICKET"):
+                if r in actual_regimes:
+                    result.findings.append(CheckFinding(
+                        check_id="CHECK_5", tag="[OUT_OF_SCOPE_PRESENT]", severity=SEVERITY_BLOCKING,
+                        symbol=f"SpanishRegime.{r}",
+                        message=(
+                            f"SpanishRegime.{r} must be removed — "
+                            "TicketBAI/NaTicket are out of scope for this package (confirmed 2026-05-31)."
+                        ),
+                    ))
         else:
             result.findings.append(CheckFinding(
                 check_id="CHECK_5", tag="[MISSING]", severity=SEVERITY_BLOCKING,
@@ -377,28 +385,22 @@ def run_check_5() -> CheckResult:
                 message="SpanishRegime enum not found in mcp_facturacion_electronica_es.models.es.",
             ))
 
-        # 5d: TicketBAIProvince covers three Basque provinces
+        # 5d: TicketBAIProvince must NOT be present (TicketBAI is out of scope)
         province_cls = getattr(models_mod, "TicketBAIProvince", None)
         if province_cls:
-            required_provinces = {"araba", "gipuzkoa", "bizkaia"}
-            actual_provinces = {p.value for p in province_cls}
-            for p in sorted(required_provinces):
-                tag = "[OK]" if p in actual_provinces else "[MISSING_PROVINCE]"
-                sev = SEVERITY_OK if p in actual_provinces else SEVERITY_BLOCKING
-                result.findings.append(CheckFinding(
-                    check_id="CHECK_5", tag=tag, severity=sev,
-                    symbol=f"TicketBAIProvince.{p}",
-                    message=(
-                        "Province value defined."
-                        if p in actual_provinces
-                        else f"Required TicketBAI province '{p}' missing from TicketBAIProvince."
-                    ),
-                ))
+            result.findings.append(CheckFinding(
+                check_id="CHECK_5", tag="[OUT_OF_SCOPE_PRESENT]", severity=SEVERITY_BLOCKING,
+                symbol="TicketBAIProvince",
+                message=(
+                    "TicketBAIProvince must be removed from models.es — "
+                    "TicketBAI is out of scope for this package (confirmed 2026-05-31)."
+                ),
+            ))
         else:
             result.findings.append(CheckFinding(
-                check_id="CHECK_5", tag="[MISSING]", severity=SEVERITY_BLOCKING,
+                check_id="CHECK_5", tag="[OK]", severity=SEVERITY_OK,
                 symbol="TicketBAIProvince",
-                message="TicketBAIProvince enum not found in mcp_facturacion_electronica_es.models.es.",
+                message="TicketBAIProvince correctly absent (TicketBAI is out of scope).",
             ))
 
         # 5e: VerifactuInvoiceType covers required type codes
@@ -436,7 +438,7 @@ def run_check_5() -> CheckResult:
             symbol="specs/",
             message=(
                 "specs/ directory not found. Drop official XSD files "
-                "(HAC/1177/2024, Facturae 3.2.2, TicketBAI provincial) into specs/ "
+                "(HAC/1177/2024, Facturae 3.2.2, SII schemas) into specs/ "
                 "to enable schema-based validation."
             ),
         ))

@@ -116,7 +116,7 @@ def minimal_facturae_xml() -> str:
     """
     return (
         '<?xml version="1.0" encoding="UTF-8"?>'
-        '<Facturae xmlns="http://www.facturae.gob.es/formato/Version3.2.2/Facturae32.xsd">'
+        '<Facturae xmlns="http://www.facturae.gob.es/formato/Versiones/Facturaev3_2_2.xml">'
         "<FileHeader>"
         "<SchemaVersion>3.2.2</SchemaVersion>"
         "<Modality>I</Modality>"

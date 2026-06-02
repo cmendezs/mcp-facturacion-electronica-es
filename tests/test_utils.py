@@ -8,6 +8,7 @@ from mcp_facturacion_electronica_es.models.es import EntityType, SpanishRegime
 from mcp_facturacion_electronica_es.tools.utils import (
     _SII_TURNOVER_THRESHOLD_EUR,
     _detect_regime,
+    _is_out_of_scope_territory,
 )
 
 # ---------------------------------------------------------------------------
@@ -18,26 +19,45 @@ from mcp_facturacion_electronica_es.tools.utils import (
 @pytest.mark.parametrize(
     "province_code, enrolled, expected",
     [
-        # Basque provinces → TicketBAI regardless of SII enrolment
-        ("01", False, SpanishRegime.TICKETBAI),   # Álava
-        ("01", True,  SpanishRegime.TICKETBAI),
-        ("20", False, SpanishRegime.TICKETBAI),   # Gipuzkoa
-        ("48", False, SpanishRegime.TICKETBAI),   # Bizkaia
-        # Navarre → NaTicket
-        ("31", False, SpanishRegime.NATICKET),
-        ("31", True,  SpanishRegime.NATICKET),
+        # Basque provinces and Navarre — foral systems out of scope;
+        # _detect_regime now returns VERIFACTU (territory check is via _is_out_of_scope_territory)
+        ("01", False, SpanishRegime.VERIFACTU),   # Alava — TicketBAI out of scope
+        ("01", True,  SpanishRegime.VERIFACTU_SII),
+        ("20", False, SpanishRegime.VERIFACTU),   # Gipuzkoa — TicketBAI out of scope
+        ("48", False, SpanishRegime.VERIFACTU),   # Bizkaia — TicketBAI out of scope
+        ("31", False, SpanishRegime.VERIFACTU),   # Navarre — NaTicket out of scope
+        ("31", True,  SpanishRegime.VERIFACTU_SII),
         # All others, enrolled in SII → VERIFACTU_SII
         ("28", True,  SpanishRegime.VERIFACTU_SII),  # Madrid
         ("08", True,  SpanishRegime.VERIFACTU_SII),  # Barcelona
         # All others, not enrolled → VERIFACTU
         ("28", False, SpanishRegime.VERIFACTU),
         ("46", False, SpanishRegime.VERIFACTU),   # Valencia
-        # Single-digit codes should be zero-padded internally
-        ("1",  False, SpanishRegime.TICKETBAI),   # Álava, no leading zero
     ],
 )
 def test_detect_regime(province_code: str, enrolled: bool, expected: SpanishRegime) -> None:
     assert _detect_regime(province_code, enrolled) == expected
+
+
+def test_out_of_scope_territory_basque() -> None:
+    """Basque provinces should be flagged as out of scope."""
+    for code in ["01", "20", "48"]:
+        note = _is_out_of_scope_territory(code)
+        assert note is not None
+        assert "TicketBAI" in note
+        assert "out of scope" in note
+
+
+def test_out_of_scope_territory_navarre() -> None:
+    note = _is_out_of_scope_territory("31")
+    assert note is not None
+    assert "NaTicket" in note
+
+
+def test_out_of_scope_territory_none_for_aeat() -> None:
+    """AEAT-scope provinces should return None."""
+    assert _is_out_of_scope_territory("28") is None  # Madrid
+    assert _is_out_of_scope_territory("08") is None  # Barcelona
 
 
 def test_detect_regime_high_turnover_no_sii() -> None:
@@ -71,13 +91,15 @@ async def test_handle_detect_regional_regime_madrid() -> None:
 
 @pytest.mark.asyncio
 async def test_handle_detect_regional_regime_araba() -> None:
+    """Araba uses TicketBAI (out of scope) — tool returns VERIFACTU + out_of_scope_warning."""
     from mcp_facturacion_electronica_es.tools.utils import handle_es_detect_regional_regime
 
     result = await handle_es_detect_regional_regime({"province_code": "01"})
     import json
     data = json.loads(result[0].text)
-    assert data["regime"] == SpanishRegime.TICKETBAI
-    assert "province_note" in data
+    assert data["regime"] == SpanishRegime.VERIFACTU
+    assert "out_of_scope_warning" in data
+    assert "TicketBAI" in data["out_of_scope_warning"]
 
 
 @pytest.mark.asyncio
@@ -108,7 +130,8 @@ async def test_handle_get_compliance_status_is_madrid() -> None:
 
 
 @pytest.mark.asyncio
-async def test_handle_get_compliance_status_ticketbai() -> None:
+async def test_handle_get_compliance_status_basque_out_of_scope() -> None:
+    """Gipuzkoa uses TicketBAI (out of scope) — tool returns VERIFACTU + out_of_scope_warning."""
     from mcp_facturacion_electronica_es.tools.utils import handle_es_get_compliance_status
 
     result = await handle_es_get_compliance_status(
@@ -116,7 +139,8 @@ async def test_handle_get_compliance_status_ticketbai() -> None:
     )
     import json
     data = json.loads(result[0].text)
-    assert data["detected_regime"] == SpanishRegime.TICKETBAI
+    assert data["detected_regime"] == SpanishRegime.VERIFACTU
+    assert "out_of_scope_warning" in data
 
 
 @pytest.mark.asyncio

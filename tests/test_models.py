@@ -13,7 +13,6 @@ from mcp_facturacion_electronica_es.models.es import (
     SIICommunicationType,
     SpanishInvoice,
     SpanishRegime,
-    TicketBAIProvince,
     VerifactuInvoiceType,
 )
 
@@ -24,20 +23,13 @@ from mcp_facturacion_electronica_es.models.es import (
 
 def test_spanish_regime_values() -> None:
     assert SpanishRegime.VERIFACTU == "VERIFACTU"
-    assert SpanishRegime.TICKETBAI == "TICKETBAI"
-    assert SpanishRegime.NATICKET == "NATICKET"
     assert SpanishRegime.VERIFACTU_SII == "VERIFACTU+SII"
+    # TicketBAI (Pais Vasco) is out of scope — not in SpanishRegime
 
 
 def test_verifactu_invoice_type_values() -> None:
     for code in ["F1", "F2", "F3", "R1", "R2", "R3", "R4", "R5"]:
         assert VerifactuInvoiceType(code) == code
-
-
-def test_ticketbai_province_values() -> None:
-    assert TicketBAIProvince.araba == "araba"
-    assert TicketBAIProvince.gipuzkoa == "gipuzkoa"
-    assert TicketBAIProvince.bizkaia == "bizkaia"
 
 
 def test_sii_comm_type() -> None:

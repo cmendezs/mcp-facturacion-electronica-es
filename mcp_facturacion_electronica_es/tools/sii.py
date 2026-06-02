@@ -12,7 +12,6 @@ AEAT SII:
 from __future__ import annotations
 
 import logging
-import os
 from decimal import Decimal
 from typing import Any
 
@@ -315,21 +314,44 @@ TOOL_ES_SUBMIT_SII_BATCH = types.Tool(
 TOOL_ES_QUERY_SII_STATUS = types.Tool(
     name="es__query_sii_status",
     description=(
-        "Consulta el estado de un lote SII mediante ConsultaFactInformadasEmitidas / Recibidas."
+        "Consulta el estado de facturas en el SII mediante ConsultaFactInformadasEmitidas / "
+        "ConsultaFactInformadasRecibidas (SOAP). Filtra por ejercicio, periodo y, "
+        "opcionalmente, por NIF del emisor y numero de factura."
     ),
     inputSchema={
         "type": "object",
         "properties": {
-            "batch_id": {
+            "nif_titular": {
                 "type": "string",
-                "description": "Referencia del lote devuelta por es__submit_sii_batch.",
+                "description": "NIF del titular SII (obligado tributario).",
+            },
+            "nombre_titular": {
+                "type": "string",
+                "description": "Nombre o razon social del titular.",
+            },
+            "fiscal_year": {
+                "type": "integer",
+                "description": "Ejercicio fiscal (YYYY).",
+            },
+            "period": {
+                "type": "string",
+                "description": "Periodo de liquidacion: '01'..'12' para mensual, o '0A' para anual.",
             },
             "record_type": {
                 "type": "string",
                 "enum": ["issued", "received"],
+                "description": "Tipo de registro: 'issued' (expedidas) o 'received' (recibidas).",
+            },
+            "invoice_number": {
+                "type": "string",
+                "description": "NumSerieFacturaEmisor para filtrar por factura concreta (opcional).",
+            },
+            "emisor_nif": {
+                "type": "string",
+                "description": "NIF del emisor para filtrar (opcional, solo para received).",
             },
         },
-        "required": ["batch_id", "record_type"],
+        "required": ["nif_titular", "nombre_titular", "fiscal_year", "period", "record_type"],
     },
 )
 
@@ -523,29 +545,124 @@ async def handle_es_submit_sii_batch(
         return err(str(exc))
 
 
+def _build_sii_consulta_envelope(
+    nif: str,
+    name: str,
+    fiscal_year: int,
+    period: str,
+    record_type: SIIRecordType,
+    invoice_number: str | None = None,
+    emisor_nif: str | None = None,
+) -> bytes:
+    """Build a SII ConsultaFactInformadasEmitidas / Recibidas SOAP envelope.
+
+    ES-LC-2: The SII status endpoint is SOAP-only. REST GET is not supported.
+    This constructs the correct ConsultaLRFacturasEmitidas or ConsultaLRFacturasRecibidas
+    SOAP envelope per the SII technical guide v3.0.
+    """
+    _SII_CONSULTA_NS = (
+        "https://www2.agenciatributaria.gob.es/static_files/common/internet/dep/aplicaciones"
+        "/es/aeat/ssii/fact/ws/ConsultaLR.xsd"
+    )
+    nsmap_soap = {
+        "soapenv": _SOAP_NS,
+        "sii": _SII_NS,
+        "con": _SII_CONSULTA_NS,
+    }
+    envelope = etree.Element(f"{{{_SOAP_NS}}}Envelope", nsmap=nsmap_soap)
+    _sub(envelope, f"{{{_SOAP_NS}}}Header")
+    body = _sub(envelope, f"{{{_SOAP_NS}}}Body")
+
+    if record_type == SIIRecordType.issued:
+        op_name = "ConsultaLRFacturasEmitidas"
+    else:
+        op_name = "ConsultaLRFacturasRecibidas"
+
+    consulta = etree.SubElement(body, f"{{{_SII_NS}}}{op_name}")
+
+    cab = _build_cabecera(nif, name, "A0")
+    consulta.append(safe_fromstring(etree.tostring(cab)))
+
+    # FiltroConsulta
+    filtro = etree.SubElement(consulta, f"{{{_SII_NS}}}FiltroConsulta")
+    periodo = etree.SubElement(filtro, f"{{{_SII_NS}}}PeriodoLiquidacion")
+    _sub(periodo, "Ejercicio", str(fiscal_year))
+    _sub(periodo, "Periodo", period)
+
+    if invoice_number or emisor_nif:
+        id_factura = etree.SubElement(filtro, f"{{{_SII_NS}}}IDFactura")
+        if emisor_nif and record_type == SIIRecordType.received:
+            id_emisor = etree.SubElement(id_factura, f"{{{_SII_NS}}}IDEmisorFactura")
+            _sub(id_emisor, "NIF", emisor_nif)
+        if invoice_number:
+            _sub(id_factura, "NumSerieFacturaEmisor", invoice_number)
+
+    return etree.tostring(envelope, xml_declaration=True, encoding="UTF-8", pretty_print=True)
+
+
 async def handle_es_query_sii_status(
     arguments: dict[str, Any],
 ) -> list[types.TextContent]:
+    """Query SII invoice status via SOAP ConsultaFactInformadasEmitidas/Recibidas.
+
+    ES-LC-2: replaced non-functional REST GET with correct SOAP envelope.
+    """
     try:
         from mcp_einvoicing_core.http_client import AuthMode, BaseEInvoicingClient
 
-        batch_id = arguments.get("batch_id", "")
+        nif_titular = arguments.get("nif_titular", "")
+        nombre_titular = arguments.get("nombre_titular", "")
+        fiscal_year = arguments.get("fiscal_year")
+        period = arguments.get("period", "")
         record_type_str = arguments.get("record_type", "issued")
-        if not batch_id:
-            return err("batch_id is required", "MISSING_PARAM")
+        invoice_number: str | None = arguments.get("invoice_number") or None
+        emisor_nif: str | None = arguments.get("emisor_nif") or None
+
+        for name, val in [
+            ("nif_titular", nif_titular),
+            ("nombre_titular", nombre_titular),
+            ("period", period),
+        ]:
+            if not val:
+                return err(f"{name} is required", "MISSING_PARAM")
+        if fiscal_year is None:
+            return err("fiscal_year is required", "MISSING_PARAM")
 
         try:
             record_type = SIIRecordType(record_type_str)
         except ValueError:
             return err(f"Invalid record_type: {record_type_str!r}")
 
-        cert_path = os.environ.get("AEAT_CERTIFICATE_PATH")
-        cert_password = os.environ.get("AEAT_CERTIFICATE_PASSWORD")
+        soap_bytes = _build_sii_consulta_envelope(
+            nif=nif_titular,
+            name=nombre_titular,
+            fiscal_year=int(fiscal_year),
+            period=period,
+            record_type=record_type,
+            invoice_number=invoice_number,
+            emisor_nif=emisor_nif,
+        )
+
+        cert_path = aeat_settings.certificate_path
         if not cert_path:
-            return err("AEAT_CERTIFICATE_PATH no está configurado.", "MISSING_CONFIG")
+            # Return the SOAP envelope without submitting if no certificate is configured
+            return ok({
+                "soap_envelope": soap_bytes.decode("utf-8"),
+                "note": (
+                    "AEAT_CERTIFICATE_PATH no configurado — SOAP envelope generado pero no enviado. "
+                    "Configure el certificado FNMT-RCM para enviar la consulta."
+                ),
+                "record_type": record_type.value,
+                "fiscal_year": fiscal_year,
+                "period": period,
+            })
 
         env = aeat_env()
-        endpoints = SII_ISSUED_ENDPOINTS if record_type == SIIRecordType.issued else SII_RECEIVED_ENDPOINTS
+        endpoints = (
+            SII_ISSUED_ENDPOINTS if record_type == SIIRecordType.issued
+            else SII_RECEIVED_ENDPOINTS
+        )
+        cert_password = aeat_settings.certificate_password
         client = BaseEInvoicingClient(
             base_url=endpoints[env],
             auth_mode=AuthMode.MTLS,
@@ -553,14 +670,38 @@ async def handle_es_query_sii_status(
             cert_password=cert_password,
         )
 
-        # [NEED: build proper ConsultaFactInformadasEmitidas SOAP envelope with IDFactura filter]
-        response = await client._request("GET", f"?batch_id={batch_id}")
+        response = await client._request(
+            "POST",
+            "",
+            data=soap_bytes,
+            headers={"Content-Type": "text/xml; charset=utf-8"},
+        )
+
+        # Parse SOAP response — extract EstadoEnvio without echoing raw AEAT response
+        raw_text = response.text
+        parsed_status: dict[str, Any] = {}
+        try:
+            resp_root = safe_fromstring(raw_text.encode())
+            # Extract key SII response fields using local-name() for namespace-agnostic lookup
+            for field in ["EstadoEnvio", "CSV", "TipoComunicacion"]:
+                elems = resp_root.xpath(f".//*[local-name()='{field}']")
+                if elems:
+                    parsed_status[field] = elems[0].text
+        except Exception:
+            parsed_status["parse_error"] = "Could not parse AEAT SOAP response"
+
+        logger.info(
+            "SII consulta %s: ejercicio=%s periodo=%s status=%s",
+            record_type.value, fiscal_year, period,
+            response.status_code,
+        )
         return ok({
-            "batch_id": batch_id,
             "record_type": record_type.value,
+            "fiscal_year": fiscal_year,
+            "period": period,
             "environment": env,
             "status_code": response.status_code,
-            "response": response.text[:2000],
+            "parsed_response": parsed_status,
         })
 
     except Exception as exc:

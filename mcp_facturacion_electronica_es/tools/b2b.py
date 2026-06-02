@@ -311,17 +311,16 @@ async def handle_es_check_b2b_mandate_applicability(
         notes: list[str] = []
         applicable_systems: list[str] = []
 
-        if regime == SpanishRegime.TICKETBAI:
-            applicable_systems = ["TicketBAI (provincial)"]
-            notes.append(
-                "El País Vasco opera bajo TicketBAI en lugar de VERI*FACTU. "
-                "Seleccione la provincia correcta (araba / gipuzkoa / bizkaia) — "
-                "cada una tiene su propio XSD y endpoint de envío."
-            )
-        elif regime == SpanishRegime.NATICKET:
-            applicable_systems = ["NaTicket (Hacienda Foral de Navarra)"]
-            notes.append("VERI*FACTU no aplica en Navarra.")
-        elif regime == SpanishRegime.VERIFACTU_SII:
+        # Check for out-of-scope foral territories before regime branching
+        from mcp_facturacion_electronica_es.tools.utils import (
+            _is_out_of_scope_territory,  # noqa: PLC0415
+        )
+        out_of_scope = _is_out_of_scope_territory(province_code)
+        if out_of_scope:
+            applicable_systems = ["Foral (out of scope)"]
+            notes.append(out_of_scope)
+
+        if regime == SpanishRegime.VERIFACTU_SII:
             applicable_systems = ["SII"]
             notes.append(
                 "Inscrito en SII: exento de VERI*FACTU (Real Decreto 254/2025). "

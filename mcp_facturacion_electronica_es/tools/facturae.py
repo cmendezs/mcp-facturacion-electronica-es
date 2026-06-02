@@ -1,8 +1,9 @@
 """MCP tools: Facturae / FACe — generación XML, firma XAdES, envío y consulta.
 
 Facturae 3.2.2:
-    Namespace: http://www.facturae.gob.es/formato/Version3.2.2/Facturae32.xsd
-    Schema:    https://www.facturae.gob.es/formato/Paginas/version-3-2.aspx
+    Namespace: http://www.facturae.gob.es/formato/Versiones/Facturaev3_2_2.xml
+    Schema:    specs/facturae/xsd/Facturaev3_2_2.xml
+    Source:    https://www.facturae.gob.es/formato/Versiones/Esquema_0_3_2_2_20200304.zip
 
 FACe REST API v2:
     Sandbox:    https://se-face.redsara.es/factura-face-b2b-api/api/v2
@@ -13,7 +14,6 @@ XAdES-EPES policy (Orden EHA/962/2007):
          politica_de_firma_formato_facturae_v3_1.pdf
     [NEED: compute SHA-256 of the policy PDF and set FACTURAE_POLICY_HASH in _helpers.py]
 
-[NEED: download Facturae 3.2.2 XSD into specs/facturae/ for full schema validation]
 [NEED: validate FACe REST API v2 OAuth2 flow against live FACe sandbox credentials]
 """
 
@@ -47,7 +47,8 @@ from mcp_facturacion_electronica_es.config import aeat_settings
 
 logger = logging.getLogger(__name__)
 
-_FACTURAE_NS = "http://www.facturae.gob.es/formato/Version3.2.2/Facturae32.xsd"
+# ES-SC-1: correct namespace confirmed from specs/facturae/xsd/Facturaev3_2_2.xml targetNamespace
+_FACTURAE_NS = "http://www.facturae.gob.es/formato/Versiones/Facturaev3_2_2.xml"
 _DS_NS = "http://www.w3.org/2000/09/xmldsig#"
 _XADES_NS = "http://uri.etsi.org/01903/v1.3.2#"
 
@@ -403,6 +404,18 @@ async def handle_es_sign_facturae_xades(
 
         policy_id: str = arguments.get("signature_policy_id") or FACTURAE_POLICY_ID
         policy_hash: str | None = arguments.get("signature_policy_hash") or FACTURAE_POLICY_HASH
+
+        # ES-SC-3: FACTURAE_POLICY_HASH is None until the SHA-256 of the policy PDF
+        # (Orden EHA/962/2007) is computed and set in _helpers.py.
+        # XAdES-EPES requires a non-null policy hash for full EPES conformance.
+        # We continue with None (core XAdES signer handles it gracefully) but log a warning.
+        if not policy_hash:
+            logger.warning(
+                "es__sign_facturae_xades: FACTURAE_POLICY_HASH is not set — "
+                "signature will lack the policy hash required for full XAdES-EPES "
+                "conformance (Orden EHA/962/2007). "
+                "Compute SHA-256 of the policy PDF and set FACTURAE_POLICY_HASH in _helpers.py."
+            )
         xml_bytes = xml_str.encode() if isinstance(xml_str, str) else xml_str
 
         if SignerClient.is_configured():
@@ -625,17 +638,18 @@ async def handle_es_validate_facturae_schema(
         ]:
             _req(tag)
 
-        # XSD validation if available
-        xsd_dir = (
-            __import__("pathlib").Path(__file__).parent.parent.parent
-            / "specs" / "facturae"
+        # XSD validation — Facturaev3_2_2.xml uses .xml extension intentionally
+        # (the targetNamespace URI itself ends in Facturaev3_2_2.xml)
+        import pathlib  # noqa: PLC0415
+        xsd_path = (
+            pathlib.Path(__file__).parent.parent.parent
+            / "specs" / "facturae" / "xsd" / "Facturaev3_2_2.xml"
         )
-        xsd_files = list(xsd_dir.glob("*.xsd")) if xsd_dir.exists() else []
         validation_mode = "structural"
 
-        if xsd_files:
+        if xsd_path.exists():
             try:
-                schema = etree.XMLSchema(etree.parse(str(xsd_files[0])))
+                schema = etree.XMLSchema(etree.parse(str(xsd_path)))
                 schema.validate(root)
                 for e in schema.error_log:
                     errors.append(f"[XSD] {e.message} (línea {e.line})")
@@ -644,8 +658,8 @@ async def handle_es_validate_facturae_schema(
                 warnings.append(f"XSD validation failed to run: {exc}")
         else:
             warnings.append(
-                "Validación XSD no disponible — descargue el XSD de Facturae 3.2.2 "
-                "desde facturae.gob.es a specs/facturae/ para validación completa."
+                "Validación XSD no disponible — specs/facturae/xsd/Facturaev3_2_2.xml "
+                "no encontrado. La validación estructural está activa."
             )
 
         return ok({

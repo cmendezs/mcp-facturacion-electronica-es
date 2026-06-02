@@ -106,15 +106,6 @@ def face_env() -> str:
     return raw
 
 
-def ticketbai_env() -> str:
-    """Return 'sandbox' or 'production' from TICKETBAI_ENV (default: 'sandbox')."""
-    raw = os.environ.get("TICKETBAI_ENV", "sandbox").lower().strip()
-    if raw not in {"sandbox", "production"}:
-        logger.warning("Unknown TICKETBAI_ENV value %r — defaulting to 'sandbox'", raw)
-        return "sandbox"
-    return raw
-
-
 # ---------------------------------------------------------------------------
 # AEAT endpoint registry
 # ---------------------------------------------------------------------------
@@ -161,24 +152,6 @@ FACE_BASE_URLS: MappingProxyType[str, str] = MappingProxyType({
     # [NEED: verify — FACe may have changed API base path in 2025]
 })
 
-#: TicketBAI provincial submission endpoints (immutable — nested proxies prevent deep mutation)
-TICKETBAI_ENDPOINTS: MappingProxyType[str, MappingProxyType[str, str]] = MappingProxyType({
-    "araba": MappingProxyType({
-        "sandbox": "https://batuz.eus/BATUZ/TicketBAI/alta",
-        "production": "https://batuz.eus/BATUZ/TicketBAI/alta",
-        # [NEED: verify Álava sandbox — may be the same as production with a test NIF]
-    }),
-    "gipuzkoa": MappingProxyType({
-        "sandbox": "https://tbai.prep.gipuzkoa.eus/sarrerak/alta/",
-        "production": "https://tbai.egoitza.gipuzkoa.eus/sarrerak/alta/",
-    }),
-    "bizkaia": MappingProxyType({
-        "sandbox": "https://pruebasapi.ebizkaia.eus/LROE/facturas/1.0/facturas",
-        "production": "https://api.ebizkaia.eus/LROE/facturas/1.0/facturas",
-        # [NEED: verify Bizkaia LROE path — Bizkaia uses a different submission scheme]
-    }),
-})
-
 #: Facturae XAdES-EPES signature policy (Orden EHA/962/2007)
 FACTURAE_POLICY_ID = (
     "http://www.facturae.es/politica_de_firma_formato_facturae"
@@ -187,15 +160,3 @@ FACTURAE_POLICY_ID = (
 #: [NEED: compute SHA-256 of the policy PDF from facturae.gob.es and set here]
 FACTURAE_POLICY_HASH: str | None = None
 
-#: TicketBAI signature policy URIs per province (immutable)
-TICKETBAI_POLICY_IDS: MappingProxyType[str, str] = MappingProxyType({
-    "araba": (
-        "https://www.araba.eus/tbai/2021061/tbai-TBXEko+sinadura+politika+v1.0+esAN.pdf"
-    ),
-    "gipuzkoa": (
-        "https://www.gipuzkoa.eus/eu/web/ogasuna/tick-et-bai"
-        "/laguntza-teknikoa/argibide-teknikoak"
-    ),
-    "bizkaia": "https://www.bizkaia.eus/ogasun/batuz/TicketBAI/ca_bizkaiako_sinadura_politika_1_0.pdf",
-    # [NEED: verify all three policy URIs from official provincial technical documentation]
-})

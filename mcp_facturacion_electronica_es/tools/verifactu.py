@@ -1,17 +1,22 @@
-"""MCP tools: VERI*FACTU — registro, validación, envío, QR y anulación.
+"""MCP tools: VERI*FACTU — registro, validacion, envio, QR y anulacion.
 
 VERI*FACTU (Real Decreto 1007/2023, Orden HAC/1177/2024):
-    XSD v1.0: BOE-A-2024-22138
-    Sandbox:  https://prewww2.aeat.es/...
+    XSD v1.0 (SuministroLR.xsd): specs/verifactu/xsd/
+    Sandbox:    https://prewww2.aeat.es/...
     Production: https://www2.agenciatributaria.gob.es/...
+
+Namespaces (confirmed from XSD targetNamespace):
+    _VF_LR_NS: SuministroLR.xsd   — RegFactuSistemaFacturacion root element
+    _VF_SF_NS: SuministroInformacion.xsd — RegistroAlta, RegistroAnulacion, Cabecera, all inner types
 
 Huella (hash chain) — Annex III HAC/1177/2024:
     SHA-256(hex, uppercase) of:
     IDEmisorFactura & NumSerieFactura & FechaExpedicionFactura & TipoFactura &
     CuotaTotal & FechaHoraHusoGenRegistro [& HuellaAnterior if not first]
 
-[NEED: download XSD v1.0 from BOE-A-2024-22138 into specs/verifactu/ to enable
-       full schema validation in es__validate_verifactu_record]
+EncadenamientoFacturaAnteriorType (SuministroInformacion.xsd) — 4 required fields:
+    IDEmisorFactura, NumSerieFactura, FechaExpedicionFactura, Huella
+
 [NEED: verify sandbox endpoint URL once AEAT opens VERI*FACTU test environment]
 """
 
@@ -47,11 +52,21 @@ from mcp_facturacion_electronica_es.models.es import VerifactuInvoiceType
 
 logger = logging.getLogger(__name__)
 
-# VERI*FACTU XML namespace
-_VF_NS = "https://www2.agenciatributaria.gob.es/static_files/common/internet/dep/aplicaciones/es/aeat/tike/cont/ws/SistemaFacturacion.xsd"
-_VF_PREFIX = "T"
+# ES-SC-7: Namespaces confirmed from specs/verifactu/xsd/ targetNamespace attributes
+# SuministroLR.xsd: root envelope element RegFactuSistemaFacturacion
+_VF_LR_NS = (
+    "https://www2.agenciatributaria.gob.es/static_files/common/internet/dep/aplicaciones"
+    "/es/aeat/tike/cont/ws/SuministroLR.xsd"
+)
+# SuministroInformacion.xsd: RegistroAlta, RegistroAnulacion, Cabecera, and all inner types
+_VF_SF_NS = (
+    "https://www2.agenciatributaria.gob.es/static_files/common/internet/dep/aplicaciones"
+    "/es/aeat/tike/cont/ws/SuministroInformacion.xsd"
+)
 
 _VERIFACTU_VERSION = "1.0"
+# IdSistemaInformatico is TextMax2Type in SuministroInformacion.xsd — max 2 characters
+_SOFTWARE_ID_CODE = "ES"
 
 
 # ---------------------------------------------------------------------------
@@ -60,8 +75,8 @@ _VERIFACTU_VERSION = "1.0"
 
 
 def _el(tag: str, text: str | None = None, **attribs: str) -> etree._Element:
-    """Create a bare (no-namespace) element with optional text and attributes."""
-    elem = etree.Element(tag)
+    """Create a namespace-qualified VeriFactu element (SuministroInformacion namespace)."""
+    elem = etree.Element(f"{{{_VF_SF_NS}}}{tag}")
     if text is not None:
         elem.text = text
     for k, v in attribs.items():
@@ -70,7 +85,8 @@ def _el(tag: str, text: str | None = None, **attribs: str) -> etree._Element:
 
 
 def _sub(parent: etree._Element, tag: str, text: str | None = None) -> etree._Element:
-    child = etree.SubElement(parent, tag)
+    """Append a namespace-qualified child element (SuministroInformacion namespace)."""
+    child = etree.SubElement(parent, f"{{{_VF_SF_NS}}}{tag}")
     if text is not None:
         child.text = text
     return child
@@ -125,6 +141,9 @@ def _build_registro_alta(
     software_nif: str,
     previous_hash: str | None,
     fecha_hora_gen: str,
+    previous_emisor_nif: str | None = None,
+    previous_num_serie: str | None = None,
+    previous_fecha: str | None = None,
 ) -> tuple[etree._Element, str]:
     """Build the RegistroAlta element and return (element, huella).
 
@@ -201,23 +220,26 @@ def _build_registro_alta(
     _sub(ra, "CuotaTotal", cuota_total)
     _sub(ra, "ImporteTotal", importe_total)
 
-    # Encadenamiento
+    # Encadenamiento — ES-LC-4: EncadenamientoFacturaAnteriorType requires all 4 fields
     enc = _sub(ra, "Encadenamiento")
     if previous_hash:
         _sub(enc, "PrimerRegistro", "N")
         reg_ant = _sub(enc, "RegistroAnterior")
-        # [NEED: store and pass IDEmisorFacturaAnterior, NumSerieAnterior, FechaAnterior]
-        # For now emit the Huella only; full chain requires storing prior invoice metadata
+        # EncadenamientoFacturaAnteriorType (SuministroInformacion.xsd):
+        # IDEmisorFactura + NumSerieFactura + FechaExpedicionFactura + Huella — all required
+        _sub(reg_ant, "IDEmisorFactura", previous_emisor_nif or seller_nif)
+        _sub(reg_ant, "NumSerieFactura", previous_num_serie or "")
+        _sub(reg_ant, "FechaExpedicionFactura", previous_fecha or fecha_es)
         _sub(reg_ant, "Huella", previous_hash)
     else:
         _sub(enc, "PrimerRegistro", "S")
 
-    # SistemaInformatico
+    # SistemaInformatico — IdSistemaInformatico is TextMax2Type (max 2 chars per XSD)
     si = _sub(ra, "SistemaInformatico")
     _sub(si, "NombreRazon", seller_name)
     _sub(si, "NIF", software_nif)
     _sub(si, "NombreSistemaInformatico", "mcp-facturacion-electronica-es")
-    _sub(si, "IdSistemaInformatico", software_id)
+    _sub(si, "IdSistemaInformatico", software_id[:2] if software_id else _SOFTWARE_ID_CODE)
     _sub(si, "Version", "0.1.0")
     _sub(si, "NumeroInstalacion", "001")
     _sub(si, "TipoUsoPosibleSoloVerifactu", "S")
@@ -225,6 +247,8 @@ def _build_registro_alta(
     _sub(si, "IndicadorMultiplesOT", "N")
 
     _sub(ra, "FechaHoraHusoGenRegistro", fecha_hora_gen)
+    # TipoHuella must be "01" (SHA-256) per TipoHuellaType enumeration in SuministroInformacion.xsd
+    _sub(ra, "TipoHuella", "01")
     _sub(ra, "Huella", huella)
 
     return ra, huella
@@ -235,14 +259,54 @@ def _wrap_registro_facturacion(
     emisor_name: str,
     inner: etree._Element,
 ) -> bytes:
-    """Wrap a RegistroAlta or RegistroAnulacion in the RegistroFacturacion envelope."""
-    root = etree.Element("RegFactuSistemaFacturacion")
-    cab = _sub(root, "Cabecera")
-    oblig = _sub(cab, "ObligadoEmision")
-    _sub(oblig, "NombreRazonSocial", emisor_name)
-    _sub(oblig, "NIF", emisor_nif)
-    root.append(inner)
+    """Wrap a RegistroAlta or RegistroAnulacion in the RegFactuSistemaFacturacion envelope.
+
+    ES-SC-7: RegFactuSistemaFacturacion is in SuministroLR namespace;
+    Cabecera and inner record types are in SuministroInformacion namespace.
+    """
+    nsmap = {
+        "sfLR": _VF_LR_NS,
+        "sf": _VF_SF_NS,
+    }
+    root = etree.Element(f"{{{_VF_LR_NS}}}RegFactuSistemaFacturacion", nsmap=nsmap)
+    # Cabecera and its children are in SuministroInformacion namespace
+    cab = etree.SubElement(root, f"{{{_VF_SF_NS}}}Cabecera")
+    oblig = etree.SubElement(cab, f"{{{_VF_SF_NS}}}ObligadoEmision")
+    etree.SubElement(oblig, f"{{{_VF_SF_NS}}}NombreRazonSocial").text = emisor_name
+    etree.SubElement(oblig, f"{{{_VF_SF_NS}}}NIF").text = emisor_nif
+    # RegistroFactura wrapper (SuministroLR namespace), contains RegistroAlta/Anulacion
+    reg_factura = etree.SubElement(root, f"{{{_VF_LR_NS}}}RegistroFactura")
+    reg_factura.append(inner)
     return etree.tostring(root, xml_declaration=True, encoding="UTF-8", pretty_print=True)
+
+
+# ---------------------------------------------------------------------------
+# Response parsing helper
+# ---------------------------------------------------------------------------
+
+
+def _parse_verifactu_response(raw: str) -> dict[str, Any]:
+    """Parse an AEAT VERI*FACTU response — extract key fields without echoing raw XML.
+
+    ES-SH-2: Raw AEAT responses must not be relayed to the LLM. Only structured
+    key fields are returned: EstadoEnvio, CSV, CodigoErrorRegistro, DescripcionErrorRegistro.
+    """
+    result: dict[str, Any] = {}
+    if not raw:
+        return result
+    try:
+        root = safe_fromstring(raw.encode())
+        for field in [
+            "EstadoEnvio", "CSV",
+            "CodigoErrorRegistro", "DescripcionErrorRegistro",
+            "EstadoRegistro",
+        ]:
+            elems = root.xpath(f".//*[local-name()='{field}']")
+            if elems:
+                result[field] = elems[0].text
+    except Exception as exc:
+        result["parse_error"] = f"Could not parse AEAT response: {exc}"
+    return result
 
 
 # ---------------------------------------------------------------------------
@@ -266,6 +330,18 @@ TOOL_ES_GENERATE_VERIFACTU_RECORD = types.Tool(
             "previous_hash": {
                 "type": "string",
                 "description": "Huella SHA-256 del registro precedente (omitir o null para el primero).",
+            },
+            "previous_emisor_nif": {
+                "type": "string",
+                "description": "NIF del emisor del registro anterior (requerido si previous_hash está presente).",
+            },
+            "previous_num_serie": {
+                "type": "string",
+                "description": "NumSerieFactura del registro anterior (requerido si previous_hash está presente).",
+            },
+            "previous_fecha": {
+                "type": "string",
+                "description": "FechaExpedicionFactura del registro anterior en DD-MM-YYYY (requerido si previous_hash está presente).",
             },
             "software_id": {
                 "type": "string",
@@ -354,7 +430,7 @@ TOOL_ES_GENERATE_QR_VERIFACTU = types.Tool(
 TOOL_ES_CANCEL_VERIFACTU_RECORD = types.Tool(
     name="es__cancel_verifactu_record",
     description=(
-        "Genera un registro de anulación VERI*FACTU (IndicadorAnulacion=S, TipoHuella=01) "
+        "Genera un registro de anulacion VERI*FACTU (TipoHuella=01) "
         "encadenado a la secuencia de huellas actual."
     ),
     inputSchema={
@@ -369,10 +445,22 @@ TOOL_ES_CANCEL_VERIFACTU_RECORD = types.Tool(
                 "description": "FechaExpedicionFactura original (YYYY-MM-DD).",
             },
             "issuer_nif": {"type": "string", "description": "NIF del emisor."},
-            "issuer_name": {"type": "string", "description": "Nombre/razón social del emisor."},
+            "issuer_name": {"type": "string", "description": "Nombre/razon social del emisor."},
             "previous_hash": {
                 "type": "string",
-                "description": "Huella del último registro en la cadena.",
+                "description": "Huella del ultimo registro en la cadena.",
+            },
+            "previous_emisor_nif": {
+                "type": "string",
+                "description": "NIF del emisor del registro anterior (IDEmisorFactura en EncadenamientoFacturaAnteriorType).",
+            },
+            "previous_num_serie": {
+                "type": "string",
+                "description": "NumSerieFactura del registro anterior.",
+            },
+            "previous_fecha": {
+                "type": "string",
+                "description": "FechaExpedicionFactura del registro anterior en DD-MM-YYYY.",
             },
         },
         "required": [
@@ -403,6 +491,9 @@ async def handle_es_generate_verifactu_record(
         software_id = arguments.get("software_id", "")
         software_nif = arguments.get("software_nif", "")
         previous_hash: str | None = arguments.get("previous_hash") or None
+        previous_emisor_nif: str | None = arguments.get("previous_emisor_nif") or None
+        previous_num_serie: str | None = arguments.get("previous_num_serie") or None
+        previous_fecha: str | None = arguments.get("previous_fecha") or None
 
         try:
             VerifactuInvoiceType(invoice_type)
@@ -413,6 +504,18 @@ async def handle_es_generate_verifactu_record(
             return err("software_id is required", "MISSING_PARAM")
         if not software_nif:
             return err("software_nif is required", "MISSING_PARAM")
+
+        # ES-LC-4: EncadenamientoFacturaAnteriorType requires IDEmisorFactura,
+        # NumSerieFactura, FechaExpedicionFactura + Huella — all 4 mandatory.
+        chain_warnings: list[str] = []
+        if previous_hash and not all([previous_emisor_nif, previous_num_serie, previous_fecha]):
+            chain_warnings.append(
+                "previous_hash provided without previous_emisor_nif / previous_num_serie / "
+                "previous_fecha: EncadenamientoFacturaAnteriorType requires all 4 fields "
+                "(IDEmisorFactura, NumSerieFactura, FechaExpedicionFactura, Huella). "
+                "Falling back to current invoice identity for missing prior-record fields — "
+                "provide the previous invoice identity for a fully conformant chain."
+            )
 
         # Timestamp: ISO 8601 with local timezone (AEAT requires timezone offset)
         now = datetime.now().astimezone()
@@ -428,6 +531,9 @@ async def handle_es_generate_verifactu_record(
             software_nif=software_nif,
             previous_hash=previous_hash,
             fecha_hora_gen=fecha_hora_gen,
+            previous_emisor_nif=previous_emisor_nif,
+            previous_num_serie=previous_num_serie,
+            previous_fecha=previous_fecha,
         )
 
         xml_bytes = _wrap_registro_facturacion(
@@ -443,7 +549,7 @@ async def handle_es_generate_verifactu_record(
             huella[:16],
         )
 
-        return ok({
+        result: dict[str, Any] = {
             "xml": xml_bytes.decode("utf-8"),
             "huella": huella,
             "fecha_hora_gen": fecha_hora_gen,
@@ -452,11 +558,14 @@ async def handle_es_generate_verifactu_record(
                 "num_serie": invoice.number,
                 "fecha": fmt_date_es(invoice.date),
             },
-            "warning": (
-                "[NEED: sign with XAdES before submission — "
-                "use es__sign_facturae_xades or a certified VERI*FACTU software]"
+            "note": (
+                "Sign with XAdES before submission — "
+                "use es__sign_facturae_xades or a certified VERI*FACTU software."
             ),
-        })
+        }
+        if chain_warnings:
+            result["chain_warnings"] = chain_warnings
+        return ok(result)
 
     except EInvoicingError as exc:
         return err(str(exc))
@@ -501,28 +610,28 @@ async def handle_es_validate_verifactu_record(
         ]:
             _req(tag)
 
-        # --- XSD validation (if schema available) ---
-        xsd_dir = (
-            __import__("pathlib").Path(__file__).parent.parent.parent
-            / "specs" / "verifactu"
+        # --- XSD validation (SuministroLR.xsd is the root schema for submissions) ---
+        import pathlib  # noqa: PLC0415
+        xsd_path = (
+            pathlib.Path(__file__).parent.parent.parent
+            / "specs" / "verifactu" / "xsd" / "SuministroLR.xsd"
         )
-        xsd_files = list(xsd_dir.glob("*.xsd")) if xsd_dir.exists() else []
         validation_mode = "structural"
 
-        if xsd_files:
+        if xsd_path.exists():
             try:
-                xsd_doc = etree.parse(str(xsd_files[0]))
+                xsd_doc = etree.parse(str(xsd_path))
                 schema = etree.XMLSchema(xsd_doc)
                 schema.validate(root)
                 for e in schema.error_log:
-                    errors.append(f"[XSD] {e.message} (línea {e.line})")
+                    errors.append(f"[XSD] {e.message} (linea {e.line})")
                 validation_mode = "xsd"
             except Exception as exc:
                 warnings.append(f"XSD validation failed to run: {exc}")
         else:
             warnings.append(
-                "Validación XSD no disponible — descargue el XSD v1.0 (BOE-A-2024-22138) "
-                "a specs/verifactu/ para habilitar validación de esquema completa."
+                "Validacion XSD no disponible — specs/verifactu/xsd/SuministroLR.xsd "
+                "no encontrado. La validacion estructural esta activa."
             )
 
         return ok({
@@ -573,14 +682,13 @@ async def handle_es_submit_verifactu_to_aeat(
                 [("xml", "registro.xml", xml_bytes, "application/xml")],
             )
             gate.consume(confirmation_token)
+            # ES-SH-2: parse response before returning — do not echo raw AEAT response to LLM
+            parsed = _parse_verifactu_response(result.get("body", ""))
             return ok({
                 "status_code": result["status_code"],
                 "environment": env,
-                "response_text": result["body"][:2000],
-                "note": (
-                    "Use es__parse_aeat_response to parse the response XML "
-                    "and extract EstadoEnvio and CSV."
-                ),
+                "parsed_response": parsed,
+                "note": "Use es__parse_aeat_response for full response parsing.",
             })
 
         # Fallback: direct mTLS (legacy mode — cert lives in MCP process).
@@ -614,16 +722,14 @@ async def handle_es_submit_verifactu_to_aeat(
             json=None,
             files={"xml": ("registro.xml", xml_bytes, "application/xml")},
         )
-        # [NEED: parse AEAT VERI*FACTU response — use es__parse_aeat_response]
+        # ES-SH-2: parse response before returning — do not echo raw AEAT response to LLM
         gate.consume(confirmation_token)
+        parsed = _parse_verifactu_response(response.text)
         return ok({
             "status_code": response.status_code,
             "environment": env,
-            "response_text": response.text[:2000],
-            "note": (
-                "Use es__parse_aeat_response to parse the response XML "
-                "and extract EstadoEnvio and CSV."
-            ),
+            "parsed_response": parsed,
+            "note": "Use es__parse_aeat_response for full response parsing.",
         })
 
     except Exception as exc:
@@ -706,22 +812,31 @@ async def handle_es_cancel_verifactu_record(
         if len(fecha_hora_gen) > 19 and ":" not in fecha_hora_gen[-6:]:
             fecha_hora_gen = fecha_hora_gen[:-2] + ":" + fecha_hora_gen[-2:]
 
+        previous_emisor_nif: str | None = arguments.get("previous_emisor_nif") or None
+        previous_num_serie_arg: str | None = arguments.get("previous_num_serie") or None
+        previous_fecha_arg: str | None = arguments.get("previous_fecha") or None
+
         # Build RegistroAnulacion
         ra = _el("RegistroAnulacion")
         _sub(ra, "IDVersion", _VERIFACTU_VERSION)
         ra.append(_build_id_factura(num_serie, issuer_nif, fecha_es))
         _sub(ra, "NombreRazonEmisor", issuer_name)
 
+        # ES-LC-4: EncadenamientoFacturaAnteriorType requires all 4 identity fields
         enc = _sub(ra, "Encadenamiento")
         _sub(enc, "PrimerRegistro", "N")
         reg_ant = _sub(enc, "RegistroAnterior")
+        _sub(reg_ant, "IDEmisorFactura", previous_emisor_nif or issuer_nif)
+        _sub(reg_ant, "NumSerieFactura", previous_num_serie_arg or num_serie)
+        _sub(reg_ant, "FechaExpedicionFactura", previous_fecha_arg or fecha_es)
         _sub(reg_ant, "Huella", previous_hash)
 
+        # SistemaInformatico — IdSistemaInformatico is TextMax2Type (max 2 chars)
         si = _sub(ra, "SistemaInformatico")
         _sub(si, "NombreRazon", issuer_name)
         _sub(si, "NIF", issuer_nif)
         _sub(si, "NombreSistemaInformatico", "mcp-facturacion-electronica-es")
-        _sub(si, "IdSistemaInformatico", "MCP-ES-001")
+        _sub(si, "IdSistemaInformatico", _SOFTWARE_ID_CODE)
         _sub(si, "Version", "0.1.0")
         _sub(si, "NumeroInstalacion", "001")
         _sub(si, "TipoUsoPosibleSoloVerifactu", "S")
@@ -740,6 +855,8 @@ async def handle_es_cancel_verifactu_record(
             fecha_hora_gen=fecha_hora_gen,
             huella_anterior=previous_hash,
         )
+        # TipoHuella must be "01" (SHA-256) per TipoHuellaType in SuministroInformacion.xsd
+        _sub(ra, "TipoHuella", "01")
         _sub(ra, "Huella", huella)
 
         xml_bytes = _wrap_registro_facturacion(

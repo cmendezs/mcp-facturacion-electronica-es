@@ -1,17 +1,17 @@
 {
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "io.github.cmendezs/mcp-facturacion-electronica-es",
-  "description": "Spanish e-invoicing MCP server: VERI*FACTU, Facturae/FACe, SII, TicketBAI, Crea y Crece B2B.",
+  "description": "Spanish e-invoicing MCP server: VERI*FACTU, Facturae/FACe, SII, Crea y Crece B2B.",
   "repository": {
     "url": "https://github.com/cmendezs/mcp-facturacion-electronica-es",
     "source": "github"
   },
-  "version": "0.1.0",
+  "version": "0.2.0",
   "packages": [
     {
       "registryType": "pypi",
       "identifier": "mcp-facturacion-electronica-es",
-      "version": "0.1.0",
+      "version": "0.2.0",
       "transport": {
         "type": "stdio"
       },
@@ -55,24 +55,6 @@
         {
           "name": "FACE_CLIENT_SECRET",
           "description": "OAuth2 client secret for FACe B2B REST API v2.",
-          "isRequired": false,
-          "format": "string"
-        },
-        {
-          "name": "TICKETBAI_ENV",
-          "description": "Target environment for TicketBAI provincial endpoints: 'sandbox' or 'production'.",
-          "isRequired": false,
-          "format": "string"
-        },
-        {
-          "name": "TICKETBAI_CERTIFICATE_PATH",
-          "description": "Filesystem path to the PKCS#12 certificate used to sign TicketBAI XML records.",
-          "isRequired": false,
-          "format": "string"
-        },
-        {
-          "name": "TICKETBAI_CERTIFICATE_PASSWORD",
-          "description": "Passphrase for the PKCS#12 certificate at TICKETBAI_CERTIFICATE_PATH.",
           "isRequired": false,
           "format": "string"
         },

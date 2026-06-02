@@ -18,11 +18,12 @@ from pydantic import Field
 
 
 class SpanishRegime(StrEnum):
-    """Applicable e-invoicing regime, determined by tax address and SII enrolment."""
+    """Applicable e-invoicing regime, determined by tax address and SII enrolment.
+
+    TicketBAI (Pais Vasco) is explicitly out of scope for this package.
+    """
 
     VERIFACTU = "VERIFACTU"
-    TICKETBAI = "TICKETBAI"
-    NATICKET = "NATICKET"
     VERIFACTU_SII = "VERIFACTU+SII"
 
 
@@ -52,14 +53,6 @@ class SIICommunicationType(StrEnum):
     A0 = "A0"  # New record (alta)
     A1 = "A1"  # Modification
     A4 = "A4"  # Removal / baja
-
-
-class TicketBAIProvince(StrEnum):
-    """Basque Country province for TicketBAI routing and XSD selection."""
-
-    araba = "araba"        # INE code 01; XSD v1.2 (Álava / Araba)
-    gipuzkoa = "gipuzkoa"  # INE code 20; XSD v1.2
-    bizkaia = "bizkaia"    # INE code 48; XSD v2.1
 
 
 class B2BFormat(StrEnum):

@@ -1,15 +1,18 @@
-"""MCP tools: utilidades — detección de régimen, estado de cumplimiento y análisis AEAT.
+"""MCP tools: utilidades — deteccion de regimen, estado de cumplimiento y analisis AEAT.
 
 Province INE codes for regime routing:
-    01 Álava (Araba)  → TicketBAI
-    20 Gipuzkoa       → TicketBAI
-    48 Bizkaia        → TicketBAI
-    31 Navarra        → NaTicket
+    01 Alava (Araba)  → TicketBAI — OUT OF SCOPE for this package
+    20 Gipuzkoa       → TicketBAI — OUT OF SCOPE for this package
+    48 Bizkaia        → TicketBAI — OUT OF SCOPE for this package
+    31 Navarra        → NaTicket  — OUT OF SCOPE for this package
     All others        → VERIFACTU  (or VERIFACTU+SII if enrolled_in_sii=True)
 
 Mutual exclusion (Royal Decree 254/2025):
     SII-enrolled taxpayers are exempt from VERI*FACTU.
-    Basque and Navarrese taxpayers never fall under VERI*FACTU.
+    Basque and Navarrese taxpayers are subject to regional foral systems
+    (TicketBAI / NaTicket) which are explicitly out of scope for this package.
+    The regime detection tool returns VERIFACTU for all AEAT-scope territories
+    and a warning for out-of-scope foral territories.
 """
 
 from __future__ import annotations
@@ -101,17 +104,39 @@ _MANDATE_DATES: dict[str, dict[str, str]] = {
 _SII_TURNOVER_THRESHOLD_EUR = 6_000_000
 
 
+def _is_out_of_scope_territory(province_code: str) -> str | None:
+    """Return a string reason if the province uses a foral system out of scope for this package.
+
+    Returns None if the territory is within AEAT/VERIFACTU scope.
+    """
+    code = str(province_code).strip().zfill(2)
+    if code in _TICKETBAI_INE_CODES:
+        names = {"01": "Alava (Araba)", "20": "Gipuzkoa", "48": "Bizkaia"}
+        return (
+            f"{names.get(code, code)} uses TicketBAI — a Basque Country foral system "
+            "that is explicitly out of scope for this package. "
+            "This package handles AEAT VERI*FACTU and SII only."
+        )
+    if code == _NATICKET_INE_CODE:
+        return (
+            "Navarra uses NaTicket (Hacienda Foral de Navarra) — "
+            "a foral system that is explicitly out of scope for this package. "
+            "This package handles AEAT VERI*FACTU and SII only."
+        )
+    return None
+
+
 def _detect_regime(
     province_code: str,
     enrolled_in_sii: bool,
     annual_turnover_eur: float | None = None,
 ) -> SpanishRegime:
-    """Pure-logic regime detection from province code and SII enrolment."""
-    code = str(province_code).strip().zfill(2)
-    if code in _TICKETBAI_INE_CODES:
-        return SpanishRegime.TICKETBAI
-    if code == _NATICKET_INE_CODE:
-        return SpanishRegime.NATICKET
+    """Pure-logic regime detection from province code and SII enrolment.
+
+    Returns VERIFACTU for all AEAT-scope territories.
+    Foral territories (Basque Country, Navarre) are out of scope — callers
+    should check _is_out_of_scope_territory() for an appropriate warning.
+    """
     if enrolled_in_sii:
         return SpanishRegime.VERIFACTU_SII
     if annual_turnover_eur is not None and annual_turnover_eur > _SII_TURNOVER_THRESHOLD_EUR:
@@ -231,28 +256,11 @@ async def handle_es_detect_regional_regime(
             ),
             SpanishRegime.VERIFACTU_SII: (
                 "SII ya inscrito — exento de VERI*FACTU (RD 254/2025). "
-                "Comunicación de facturas en 4 días hábiles."
-            ),
-            SpanishRegime.TICKETBAI: (
-                "TicketBAI (País Vasco). Régimen foral independiente del nacional AEAT. "
-                "Requiere certificación de software provincial."
-            ),
-            SpanishRegime.NATICKET: (
-                "NaTicket (Navarra). Régimen foral de la Hacienda Foral de Navarra. "
-                "VERI*FACTU no aplica."
+                "Comunicacion de facturas en 4 dias habiles."
             ),
         }
 
-        province_note = ""
-        code = str(province_code).strip().zfill(2)
-        if code == "01":
-            province_note = "Álava / Araba — TicketBAI (XSD v1.2)"
-        elif code == "20":
-            province_note = "Gipuzkoa — TicketBAI (XSD v1.2)"
-        elif code == "48":
-            province_note = "Bizkaia — TicketBAI (XSD v2.1)"
-        elif code == "31":
-            province_note = "Navarra — NaTicket (Hacienda Foral de Navarra)"
+        out_of_scope = _is_out_of_scope_territory(province_code)
 
         result: dict[str, Any] = {
             "province_code": province_code,
@@ -260,8 +268,9 @@ async def handle_es_detect_regional_regime(
             "regime": regime.value,
             "description": descriptions[regime],
         }
-        if province_note:
-            result["province_note"] = province_note
+        if out_of_scope:
+            result["out_of_scope_warning"] = out_of_scope
+            result["province_note"] = out_of_scope
 
         logger.info(
             "Regime detected: province=%s enrolled_sii=%s → %s",
@@ -309,16 +318,16 @@ async def handle_es_get_compliance_status(
             **_MANDATE_DATES["B2B_CREA_Y_CRECE"],
         })
 
+        # Check if territory is out of scope (Basque Country / Navarre foral systems)
+        out_of_scope = _is_out_of_scope_territory(province_code)
+
         # Regime-specific system
-        if regime == SpanishRegime.TICKETBAI:
+        if out_of_scope:
             applicable_systems.append({
-                "scope": "Todas las facturas (sustituye a VERI*FACTU en el País Vasco)",
-                **_MANDATE_DATES["TICKETBAI"],
-            })
-        elif regime == SpanishRegime.NATICKET:
-            applicable_systems.append({
-                "scope": "Todas las facturas en Navarra",
-                **_MANDATE_DATES["NATICKET"],
+                "scope": "Territorio foral — fuera del alcance de este paquete",
+                "system": "Foral (out of scope)",
+                "deadline": "see_territory_authority",
+                "description": out_of_scope,
             })
         elif regime == SpanishRegime.VERIFACTU_SII:
             applicable_systems.append({
@@ -343,12 +352,14 @@ async def handle_es_get_compliance_status(
             "enrolled_in_sii": enrolled,
             "detected_regime": regime.value,
             "applicable_systems": applicable_systems,
-            "disclaimer": (
-                "Fechas de mandato según RD-ley 15/2025 (diciembre 2025). "
-                "Sujetas a cambios por legislación posterior o instrucciones de la AEAT. "
-                "Este software no constituye asesoramiento jurídico ni fiscal."
-            ),
         }
+        if out_of_scope:
+            result["out_of_scope_warning"] = out_of_scope
+        result["disclaimer"] = (
+            "Fechas de mandato segun RD-ley 15/2025 (diciembre 2025). "
+            "Sujetas a cambios por legislacion posterior o instrucciones de la AEAT. "
+            "Este software no constituye asesoramiento juridico ni fiscal."
+        )
         if turnover is not None:
             result["annual_turnover_eur"] = turnover
             if turnover > _SII_TURNOVER_THRESHOLD_EUR:

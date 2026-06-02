@@ -9,7 +9,8 @@ from lxml import etree
 
 from mcp_facturacion_electronica_es.tools.facturae import build_facturae_xml
 
-_FACTURAE_NS = "http://www.facturae.gob.es/formato/Version3.2.2/Facturae32.xsd"
+# ES-SC-1: correct namespace confirmed from specs/facturae/xsd/Facturaev3_2_2.xml targetNamespace
+_FACTURAE_NS = "http://www.facturae.gob.es/formato/Versiones/Facturaev3_2_2.xml"
 
 
 # ---------------------------------------------------------------------------
@@ -109,7 +110,7 @@ async def test_handle_validate_facturae_schema_valid(minimal_facturae_xml) -> No
 async def test_handle_validate_facturae_schema_missing_elements() -> None:
     from mcp_facturacion_electronica_es.tools.facturae import handle_es_validate_facturae_schema
 
-    minimal_xml = '<?xml version="1.0" encoding="UTF-8"?><Facturae xmlns="http://www.facturae.gob.es/formato/Version3.2.2/Facturae32.xsd"><FileHeader/></Facturae>'
+    minimal_xml = '<?xml version="1.0" encoding="UTF-8"?><Facturae xmlns="http://www.facturae.gob.es/formato/Versiones/Facturaev3_2_2.xml"><FileHeader/></Facturae>'
     result = await handle_es_validate_facturae_schema({"xml": minimal_xml})
     data = json.loads(result[0].text)
     # Missing required elements — must flag errors

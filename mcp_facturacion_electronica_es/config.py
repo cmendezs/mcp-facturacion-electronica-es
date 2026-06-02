@@ -6,7 +6,7 @@ process (mitigation for the co-residency risk identified in security audit H1).
 
 Usage in tool handlers::
 
-    from mcp_facturacion_electronica_es.config import aeat_settings, ticketbai_settings
+    from mcp_facturacion_electronica_es.config import aeat_settings
 
     cert_path = aeat_settings.certificate_path
     cert_password = aeat_settings.certificate_password  # None after env-var pop
@@ -41,23 +41,6 @@ class AEATSettings(BaseSettings):
     }
 
 
-class TicketBAISettings(BaseSettings):
-    """TicketBAI per-province signing settings."""
-
-    environment: str = Field(default="sandbox", alias="TICKETBAI_ENV")
-    certificate_path: str | None = Field(default=None, alias="TICKETBAI_CERTIFICATE_PATH")
-    certificate_password: str | None = Field(
-        default=None, alias="TICKETBAI_CERTIFICATE_PASSWORD"
-    )
-
-    model_config = {
-        "env_file": ".env",
-        "env_file_encoding": "utf-8",
-        "extra": "ignore",
-        "populate_by_name": True,
-    }
-
-
 def _load_aeat_settings() -> AEATSettings:
     settings = AEATSettings()
     # Pop password from environment so subsequent os.environ.get() calls by any
@@ -69,15 +52,5 @@ def _load_aeat_settings() -> AEATSettings:
     return settings
 
 
-def _load_ticketbai_settings() -> TicketBAISettings:
-    settings = TicketBAISettings()
-    for var in ("TICKETBAI_CERTIFICATE_PASSWORD",):
-        if var in os.environ:
-            os.environ.pop(var)
-            logger.debug("Popped %s from process environment after first load", var)
-    return settings
-
-
-# Module-level singletons — credentials loaded and env vars popped at import time.
+# Module-level singleton — credentials loaded and env vars popped at import time.
 aeat_settings: AEATSettings = _load_aeat_settings()
-ticketbai_settings: TicketBAISettings = _load_ticketbai_settings()

@@ -41,14 +41,6 @@ from mcp_facturacion_electronica_es.tools.sii import (
     handle_es_query_sii_status,
     handle_es_submit_sii_batch,
 )
-from mcp_facturacion_electronica_es.tools.ticketbai import (
-    TOOL_ES_GENERATE_TICKETBAI_XML,
-    TOOL_ES_SUBMIT_TICKETBAI,
-    TOOL_ES_VALIDATE_TICKETBAI_SCHEMA,
-    handle_es_generate_ticketbai_xml,
-    handle_es_submit_ticketbai,
-    handle_es_validate_ticketbai_schema,
-)
 from mcp_facturacion_electronica_es.tools.utils import (
     TOOL_ES_DETECT_REGIONAL_REGIME,
     TOOL_ES_GET_COMPLIANCE_STATUS,
@@ -92,10 +84,6 @@ _ALL_TOOLS: list[types.Tool] = [
     TOOL_ES_SUBMIT_SII_BATCH,
     TOOL_ES_QUERY_SII_STATUS,
     TOOL_ES_GENERATE_SII_CORRECTION,
-    # TicketBAI
-    TOOL_ES_GENERATE_TICKETBAI_XML,
-    TOOL_ES_SUBMIT_TICKETBAI,
-    TOOL_ES_VALIDATE_TICKETBAI_SCHEMA,
     # Crea y Crece / B2B
     TOOL_ES_GENERATE_B2B_EINVOICE_ES,
     TOOL_ES_CHECK_B2B_MANDATE_APPLICABILITY,
@@ -123,10 +111,6 @@ _TOOL_HANDLERS: dict[str, Any] = {
     "es__submit_sii_batch":               handle_es_submit_sii_batch,
     "es__query_sii_status":               handle_es_query_sii_status,
     "es__generate_sii_correction":        handle_es_generate_sii_correction,
-    # TicketBAI
-    "es__generate_ticketbai_xml":         handle_es_generate_ticketbai_xml,
-    "es__submit_ticketbai":               handle_es_submit_ticketbai,
-    "es__validate_ticketbai_schema":      handle_es_validate_ticketbai_schema,
     # Crea y Crece / B2B
     "es__generate_b2b_einvoice_es":       handle_es_generate_b2b_einvoice_es,
     "es__check_b2b_mandate_applicability": handle_es_check_b2b_mandate_applicability,
@@ -150,7 +134,16 @@ def _build_server() -> Server:
         handler = _TOOL_HANDLERS.get(name)
         if handler is None:
             raise ValueError(f"Unknown tool: {name!r}")
-        logger.debug("Dispatching tool %r with args %r", name, arguments)
+        # ES-SH-4: redact credential fields before logging to prevent plaintext password leak
+        _REDACTED_KEYS = frozenset({
+            "cert_password", "certificate_password", "client_secret",
+            "face_client_secret", "password", "token",
+        })
+        safe_args = {
+            k: "***" if k in _REDACTED_KEYS else v
+            for k, v in arguments.items()
+        }
+        logger.debug("Dispatching tool %r with args %r", name, safe_args)
         return await handler(arguments)
 
     return server
