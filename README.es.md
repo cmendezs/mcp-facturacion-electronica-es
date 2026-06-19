@@ -1,6 +1,6 @@
 # mcp-facturacion-electronica-es 🇪🇸
 
-[English](README.md) | [Espanol](README.es.md)
+[English](README.md) | [Español](README.es.md)
 
 <!-- mcp-name: io.github.cmendezs/mcp-facturacion-electronica-es -->
 
@@ -10,24 +10,24 @@
 
 ---
 
-## Introduccion
+## Introducción
 
 **mcp-facturacion-electronica-es** es un servidor MCP (Model Context Protocol) especializado
-en facturacion electronica espanola. Proporciona herramientas para generar, validar y enviar
-facturas electronicas bajo los seis sistemas coexistentes en Espana: VERI\*FACTU, Facturae/FACe,
-SII, TicketBAI (Pais Vasco), NaTicket (Navarra) y las obligaciones B2B de la Ley 18/2022
-"Crea y Crece". El servidor esta construido sobre `mcp-einvoicing-core`, la libreria base
+en facturación electrónica española. Proporciona herramientas para generar, validar y enviar
+facturas electrónicas bajo los seis sistemas coexistentes en España: VERI\*FACTU, Facturae/FACe,
+SII, TicketBAI (País Vasco), NaTicket (Navarra) y las obligaciones B2B de la Ley 18/2022
+"Crea y Crece". El servidor está construido sobre `mcp-einvoicing-core`, la librería base
 compartida con `mcp-facture-electronique-fr` (Francia, XP Z12-013) y `mcp-einvoicing-be`
-(Belgica, Peppol BIS 3.0).
+(Bélgica, Peppol BIS 3.0).
 
-Espana opera uno de los ecosistemas de facturacion electronica mas complejos de Europa,
-con seis sistemas superpuestos que se aplican en funcion del tamano del contribuyente, el
-sector y la region. VERI\*FACTU (Real Decreto 1007/2023, Orden HAC/1177/2024) es el proximo
+España opera uno de los ecosistemas de facturación electrónica más complejos de Europa,
+con seis sistemas superpuestos que se aplican en función del tamaño del contribuyente, el
+sector y la región. VERI\*FACTU (Real Decreto 1007/2023, Orden HAC/1177/2024) es el próximo
 registro obligatorio de facturas en tiempo real para contribuyentes no inscritos en el SII,
 con plazos firmes en enero y julio de 2027 (RD-ley 15/2025). El SII (Suministro Inmediato
-de Informacion) ya se aplica a grandes contribuyentes (facturacion >6M EUR). El Pais Vasco
+de Información) ya se aplica a grandes contribuyentes (facturación >6M EUR). El País Vasco
 opera TicketBAI y Navarra opera NaTicket, ambos independientes del marco nacional de la AEAT.
-La facturacion B2G mediante Facturae XML en el portal FACe es obligatoria desde 2015
+La facturación B2G mediante Facturae XML en el portal FACe es obligatoria desde 2015
 (Ley 25/2013).
 
 ---
@@ -35,39 +35,39 @@ La facturacion B2G mediante Facturae XML en el portal FACe es obligatoria desde 
 ## Construido sobre
 
 Este paquete se basa en [**mcp-einvoicing-core**](https://github.com/cmendezs/mcp-einvoicing-core),
-la libreria base compartida por todos los servidores MCP del ecosistema `mcp-einvoicing`. Proporciona
-modelos comunes, abstracciones de validacion, utilidades XML y la jerarquia de excepciones.
+la librería base compartida por todos los servidores MCP del ecosistema `mcp-einvoicing`. Proporciona
+modelos comunes, abstracciones de validación, utilidades XML y la jerarquía de excepciones.
 
-`mcp-einvoicing-core` se instala automaticamente como dependencia transitiva, no se requiere
-ningun paso adicional.
+`mcp-einvoicing-core` se instala automáticamente como dependencia transitiva, no se requiere
+ningún paso adicional.
 
 ---
 
-## Descripcion general
+## Descripción general
 
-El ecosistema espanol de facturacion electronica cuenta con **seis sistemas coexistentes** con
-ambitos, formatos y calendarios distintos. VERI\*FACTU introduce registros de factura
-inviolables encadenados que se envian en tiempo real a la AEAT (Agencia Estatal de
-Administracion Tributaria), aplicable a la mayoria de empresas a partir de 2027 (RD-ley 15/2025).
-El SII ya es obligatorio para grandes contribuyentes bajo una ventana de comunicacion de
-4 dias. Facturae XML con firma XAdES-EPES cubre toda la facturacion B2G a traves del portal
-FACe. El Pais Vasco aplica TicketBAI de forma independiente, con tres autoridades provinciales
+El ecosistema español de facturación electrónica cuenta con **seis sistemas coexistentes** con
+ámbitos, formatos y calendarios distintos. VERI\*FACTU introduce registros de factura
+inviolables encadenados que se envían en tiempo real a la AEAT (Agencia Estatal de
+Administración Tributaria), aplicable a la mayoría de empresas a partir de 2027 (RD-ley 15/2025).
+El SII ya es obligatorio para grandes contribuyentes bajo una ventana de comunicación de
+4 días. Facturae XML con firma XAdES-EPES cubre toda la facturación B2G a través del portal
+FACe. El País Vasco aplica TicketBAI de forma independiente, con tres autoridades provinciales
 que mantienen cada una sus propios esquemas XSD y endpoints. Navarra opera NaTicket. La Ley
-Crea y Crece exige la facturacion electronica B2B para todas las empresas, con formato
-pendiente del reglamento de desarrollo. La deteccion del regimen a partir del domicilio
-fiscal y el volumen de operaciones es un requisito previo a todas las demas operaciones:
+Crea y Crece exige la facturación electrónica B2B para todas las empresas, con formato
+pendiente del reglamento de desarrollo. La detección del régimen a partir del domicilio
+fiscal y el volumen de operaciones es un requisito previo a todas las demás operaciones:
 utilice `es__detect_regional_regime` en primer lugar.
 
 ---
 
 ## Cobertura regulatoria
 
-| Sistema | Ambito | Formato | Obligatorio desde | Estado |
+| Sistema | Ámbito | Formato | Obligatorio desde | Estado |
 |---|---|---|---|---|
 | **VERI\*FACTU** | Todas las empresas no-SII | XML propietario (XSD v1.0 HAC/1177/2024) | IS: ene 2027 / Otros: jul 2027 (RD-ley 15/2025) | ⚠️ Pendiente |
-| **Facturae / FACe** | B2G (sector publico) | Facturae 3.2.2 + XAdES-EPES | Obligatorio desde 2015 (Ley 25/2013) | ⚠️ Pendiente |
-| **SII** | Facturacion >6M EUR, grupos IVA, REDEME | XML SOAP/REST AEAT | Ya obligatorio (RD 596/2016) | ⚠️ Pendiente |
-| **TicketBAI** | Araba, Gipuzkoa, Bizkaia | XML provincial + XAdES + QR | Segun provincia, 2022-2023 | ⚠️ Pendiente |
+| **Facturae / FACe** | B2G (sector público) | Facturae 3.2.2 + XAdES-EPES | Obligatorio desde 2015 (Ley 25/2013) | ⚠️ Pendiente |
+| **SII** | Facturación >6M EUR, grupos IVA, REDEME | XML SOAP/REST AEAT | Ya obligatorio (RD 596/2016) | ⚠️ Pendiente |
+| **TicketBAI** | Araba, Gipuzkoa, Bizkaia | XML provincial + XAdES + QR | Según provincia, 2022-2023 | ⚠️ Pendiente |
 | **Crea y Crece (B2B)** | Todas las empresas (umbral pendiente) | UBL 2.1 o Facturae 3.2.2 (EN 16931) | Reglamento de desarrollo pendiente | ⚠️ Pendiente |
 | **NaTicket** | Navarra | XML foral + firma | Mandato foral (implantacion escalonada) | Parcial (via `es__detect_regional_regime`) |
 
@@ -841,18 +841,18 @@ la verificacion regulatoria.
 
 ---
 
-## Other e-invoicing MCP servers
+## Otros servidores MCP de facturación electrónica
 
-| Country | Server |
+| País | Servidor |
 |---------|--------|
 | 🌍 Global | [mcp-einvoicing-core](https://github.com/cmendezs/mcp-einvoicing-core) |
-| 🇧🇪 Belgium | [mcp-einvoicing-be](https://github.com/cmendezs/mcp-einvoicing-be) |
-| 🇧🇷 Brazil | [mcp-nfe-br](https://github.com/cmendezs/mcp-nfe-br) |
-| 🇫🇷 France | [mcp-facture-electronique-fr](https://github.com/cmendezs/mcp-facture-electronique-fr) |
-| 🇩🇪 Germany | [mcp-einvoicing-de](https://github.com/cmendezs/mcp-einvoicing-de) |
-| 🇮🇹 Italy | [mcp-fattura-elettronica-it](https://github.com/cmendezs/mcp-fattura-elettronica-it) |
-| 🇵🇱 Poland | [mcp-ksef-pl](https://github.com/cmendezs/mcp-ksef-pl) |
-| 🇪🇸 Spain | [mcp-facturacion-electronica-es](https://github.com/cmendezs/mcp-facturacion-electronica-es) |
+| 🇧🇪 Bélgica | [mcp-einvoicing-be](https://github.com/cmendezs/mcp-einvoicing-be) |
+| 🇧🇷 Brasil | [mcp-nfe-br](https://github.com/cmendezs/mcp-nfe-br) |
+| 🇫🇷 Francia | [mcp-facture-electronique-fr](https://github.com/cmendezs/mcp-facture-electronique-fr) |
+| 🇩🇪 Alemania | [mcp-einvoicing-de](https://github.com/cmendezs/mcp-einvoicing-de) |
+| 🇮🇹 Italia | [mcp-fattura-elettronica-it](https://github.com/cmendezs/mcp-fattura-elettronica-it) |
+| 🇵🇱 Polonia | [mcp-ksef-pl](https://github.com/cmendezs/mcp-ksef-pl) |
+| 🇪🇸 España | [mcp-facturacion-electronica-es](https://github.com/cmendezs/mcp-facturacion-electronica-es) |
 
 ---
 
