@@ -62,11 +62,11 @@ based on tax domicile and turnover is a prerequisite to all other operations: us
 
 | System | Scope | Format | Mandatory from | Status |
 |---|---|---|---|---|
-| **VERI\*FACTU** | All non-SII businesses | Proprietary XML (XSD v1.0 HAC/1177/2024) | IS: Jan 2027 / Others: Jul 2027 (RD-ley 15/2025) | ⚠️ Pending |
-| **Facturae / FACe** | B2G (public sector) | Facturae 3.2.2 + XAdES-EPES | Mandatory since 2015 (Ley 25/2013) | ⚠️ Pending |
-| **SII** | Turnover >6M EUR, VAT groups, REDEME | XML SOAP/REST AEAT | Already mandatory (RD 596/2016) | ⚠️ Pending |
-| **TicketBAI** | Araba, Gipuzkoa, Bizkaia | Provincial XML + XAdES + QR | By province, 2022-2023 | ⚠️ Pending |
-| **Crea y Crece (B2B)** | All businesses (threshold pending) | UBL 2.1 or Facturae 3.2.2 (EN 16931) | Implementing regulations pending | ⚠️ Pending |
+| **VERI\*FACTU** | All non-SII businesses | Proprietary XML (XSD v1.0 HAC/1177/2024) | IS: Jan 2027 / Others: Jul 2027 (RD-ley 15/2025) | Implemented (pending regulatory confirmation) |
+| **Facturae / FACe** | B2G (public sector) | Facturae 3.2.2 + XAdES-EPES | Mandatory since 2015 (Ley 25/2013) | Implemented (pending regulatory confirmation) |
+| **SII** | Turnover >6M EUR, VAT groups, REDEME | XML SOAP/REST AEAT | Already mandatory (RD 596/2016) | Implemented (pending regulatory confirmation) |
+| **TicketBAI** | Araba, Gipuzkoa, Bizkaia | Provincial XML + XAdES + QR | By province, 2022-2023 | Removed from scope (v0.2.0) |
+| **Crea y Crece (B2B)** | All businesses (threshold pending) | UBL 2.1 or Facturae 3.2.2 (EN 16931) | Implementing regulations pending | Implemented (pending regulatory confirmation) |
 | **NaTicket** | Navarre | Foral XML + signature | Foral mandate (phased rollout) | Partial (via `es__detect_regional_regime`) |
 
 > **SII / VERI\*FACTU mutual exclusion (Real Decreto 254/2025):** Taxpayers enrolled in
@@ -633,19 +633,6 @@ mcp-einvoicing-core (v0.1.0+)
 └── mcp-ksef-pl                    (Poland — KSeF / FA(2))
 ```
 
-### Functions candidate for `mcp-einvoicing-core`
-
-| Function | Score | Action |
-|---|---|---|
-| XAdES digital signing | 3/3 (FR, ES, IT) | MUST promote, open issue in `mcp-einvoicing-core` |
-| QR code generation | 3/3 (FR, ES, TicketBAI) | MUST promote |
-| Sandbox/production URL router | 3/3 (FR, BE, ES) | MUST promote |
-| Credit note builder | 3/3 (BE, ES, FR) | MUST promote |
-| Invoice hash chain (fingerprint) | 2/3 (ES, FR NF525) | SHOULD promote |
-| Mandate deadline registry | 2/3 (FR, ES) | SHOULD promote |
-
----
-
 ## Compliance notes
 
 > **Notice:** Mandate dates reflect RD-ley 15/2025 (December 2025) and are
@@ -693,116 +680,6 @@ uv run pytest --cov=mcp_facturacion_electronica_es --cov-report=term-missing
 
 ---
 
-## Roadmap
-
-Pending items have been extracted directly from the `[NEED]` markers present in the source code. Each version is a prerequisite for the next and must pass the audit gate (`make audit`) before being published.
-
-### v0.1.0 (current) — Scaffold and local generation
-
-Tools implemented with valid XML generated locally, structural validation, regime logic, and XAdES signing. No submissions to external platforms confirmed against real environments.
-
----
-
-### v0.2.0 — XSD schema bundle and protocol fixes
-
-**Complete XSD validation (currently structural only):**
-
-| Task | File | Regulatory reference |
-|---|---|---|
-| Download VERI\*FACTU XSD v1.0 to `specs/verifactu/` | `tools/verifactu.py` | BOE-A-2024-22138 (Orden HAC/1177/2024) |
-| Download Facturae 3.2.2 XSD to `specs/facturae/` | `tools/facturae.py` | facturae.gob.es |
-| Download TicketBAI Araba XSD v1.2 to `specs/ticketbai/araba/` | `tools/ticketbai.py` | batuz.eus |
-| Download TicketBAI Gipuzkoa XSD v1.2 to `specs/ticketbai/gipuzkoa/` | `tools/ticketbai.py` | gipuzkoa.eus |
-| Download TicketBAI Bizkaia XSD v2.1 to `specs/ticketbai/bizkaia/` | `tools/ticketbai.py` | bizkaia.eus |
-
-**XAdES signature policies:**
-
-| Task | File |
-|---|---|
-| Compute SHA-256 of the Facturae policy PDF (Orden EHA/962/2007) and assign `FACTURAE_POLICY_HASH` in `_helpers.py` | `_helpers.py`, `tools/facturae.py` |
-| Obtain and assign the SHA-256 hashes of provincial TicketBAI policies (Araba, Gipuzkoa, Bizkaia) in `TICKETBAI_POLICY_IDS` | `_helpers.py`, `tools/ticketbai.py` |
-| Verify the three TicketBAI policy URIs against each province's official technical documentation | `_helpers.py` |
-
-**Protocol fixes:**
-
-| Task | File |
-|---|---|
-| Verify the HuellaTBAI algorithm against the official technical specification (raw bytes, Base64-decoded, or text?) | `tools/ticketbai.py` |
-| Fill in the TicketBAI `Claves` element with the correct invoice types | `tools/ticketbai.py` |
-| Add `HoraExpedicionFactura` as an input parameter to `es__generate_ticketbai_xml` | `tools/ticketbai.py` |
-| Confirm the exact VERI\*FACTU QR URL format and parameters (Art. 10 HAC/1177/2024) | `tools/verifactu.py` |
-| Add IBAN and BIC fields to the Facturae 3.2.2 `AccountToBeCredited` block | `tools/facturae.py` |
-
----
-
-### v0.3.0 — Endpoint verification and sandbox
-
-**AEAT — VERI\*FACTU:**
-
-| Task | File |
-|---|---|
-| Verify the VERI\*FACTU sandbox endpoint URL once the AEAT opens the test environment | `tools/verifactu.py`, `_helpers.py` |
-| Confirm the VERI\*FACTU production URL against the technical guide published by the AEAT | `_helpers.py` |
-
-**AEAT — SII:**
-
-| Task | File |
-|---|---|
-| Confirm the SII sandbox URL (`www7` or `www10`?) against the SII technical guide v3.0 | `_helpers.py`, `tools/sii.py` |
-| Validate the SOAP envelope structure against the AEAT SII v3.0 sandbox | `tools/sii.py` |
-
-**FACe:**
-
-| Task | File |
-|---|---|
-| Verify the FACe B2B API v2 base path (may have changed in 2025) | `_helpers.py` |
-| Verify the FACe OAuth2 endpoint URL for sandbox and production | `tools/facturae.py` |
-| Validate the complete FACe OAuth2 flow against real sandbox credentials | `tools/facturae.py` |
-
-**TicketBAI:**
-
-| Task | File |
-|---|---|
-| Verify the Araba sandbox endpoint (same as production with test NIF?) | `_helpers.py` |
-| Verify the Bizkaia LROE API path (different submission schema from the rest) | `_helpers.py` |
-| Confirm the authentication method per province (MTLS certificate, API key, etc.) | `tools/ticketbai.py` |
-
----
-
-### v0.4.0 — Full chain and correct SII batches
-
-| Task | File | Detail |
-|---|---|---|
-| Store and propagate `IDEmisorFacturaAnterior`, `NumSerieFacturaAnterior`, and `FechaAnterior` for complete VERI\*FACTU chaining | `tools/verifactu.py` | Currently only the `Huella` is chained; the specification also requires the previous record identifiers |
-| Merge multiple `RegistroLRFacturas` records into a single `SuministroLRFacturasEmitidas` for the actual SII batch | `tools/sii.py` | Current behavior sends each record separately |
-| Build the SOAP envelope `ConsultaFactInformadasEmitidas` / `ConsultaFactInformadasRecibidas` with `IDFactura` filter in `es__query_sii_status` | `tools/sii.py` | Currently sends a generic GET request |
-| Document or implement the VERI\*FACTU record XAdES signing flow before submission | `tools/verifactu.py` | The record generated by `es__generate_verifactu_record` must be signed before being submitted to the AEAT |
-| Parse the AEAT response in the `es__submit_verifactu_to_aeat` handler using `es__parse_aeat_response` | `tools/verifactu.py` | Currently returns raw text |
-
----
-
-### v0.5.0 — Crea y Crece B2B + audit hardening
-
-| Task | File | Detail |
-|---|---|---|
-| Confirm B2B format requirements (UBL 2.1 vs. Facturae 3.2.2) once the implementing regulations of Ley 18/2022 are published | `tools/b2b.py` | The regulations are pending publication as of May 2026 |
-| Update `_INTENTIONAL_OVERRIDES` and `_CORE_MODULES_TO_CHECK` in the audit once the `mcp-einvoicing-core` public API is finalized | `audit/audit_vs_core.py` | Will reduce the current 66 CHECK 1 warnings |
-| Replace the hand-rolled PEP 440 version parser with `packaging.version` | `audit/audit_vs_core.py` | The current parser only supports `>=X` and `<Y` |
-| Update CHECK 5 with additional checks from the `mcp-einvoicing-core` tool category registry | `audit/audit_vs_core.py` | — |
-
----
-
-### v1.0.0 — Production ready
-
-- All sandbox verifications completed
-- All XSD validations enabled (specs/ populated)
-- Full VERI\*FACTU mandate coverage (January and July 2027)
-- TicketBAI software certified by all three Basque provinces
-- Crea y Crece B2B regulations published and implemented
-- Audit gate with zero warnings (exit code 0)
-
----
-
 ## Contributing
 
 Open an issue before starting significant work. For reusable utility logic across country
@@ -821,20 +698,6 @@ All regulatory assertions must reference a specific BOE publication, an official
 or an AEAT technical guide version. Do not remove
 `⚠️ Pending regulatory confirmation` without linking the verified source in the
 PR description.
-
----
-
-## Audit Summary — Phase 1
-
-| Check | Result | Notes |
-|---|---|---|
-| Core contract | PENDING | No source code, all contracts defined, none implemented |
-| Tool coverage | 0/22 | All 22 tools specified; none implemented |
-| Regulatory accuracy | 0/22 verified | All tools carry `⚠️` pending implementation |
-| Core promotion | 6 candidates | XAdES, QR, URL router, hash chain, credit note, deadline registry |
-
-This README is the **specification document** for the implementation phase.
-Tool badges will be updated to ✅ as each tool passes regulatory verification.
 
 ---
 

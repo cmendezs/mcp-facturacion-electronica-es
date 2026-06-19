@@ -64,11 +64,11 @@ utilice `es__detect_regional_regime` en primer lugar.
 
 | Sistema | Ámbito | Formato | Obligatorio desde | Estado |
 |---|---|---|---|---|
-| **VERI\*FACTU** | Todas las empresas no-SII | XML propietario (XSD v1.0 HAC/1177/2024) | IS: ene 2027 / Otros: jul 2027 (RD-ley 15/2025) | ⚠️ Pendiente |
-| **Facturae / FACe** | B2G (sector público) | Facturae 3.2.2 + XAdES-EPES | Obligatorio desde 2015 (Ley 25/2013) | ⚠️ Pendiente |
-| **SII** | Facturación >6M EUR, grupos IVA, REDEME | XML SOAP/REST AEAT | Ya obligatorio (RD 596/2016) | ⚠️ Pendiente |
-| **TicketBAI** | Araba, Gipuzkoa, Bizkaia | XML provincial + XAdES + QR | Según provincia, 2022-2023 | ⚠️ Pendiente |
-| **Crea y Crece (B2B)** | Todas las empresas (umbral pendiente) | UBL 2.1 o Facturae 3.2.2 (EN 16931) | Reglamento de desarrollo pendiente | ⚠️ Pendiente |
+| **VERI\*FACTU** | Todas las empresas no-SII | XML propietario (XSD v1.0 HAC/1177/2024) | IS: ene 2027 / Otros: jul 2027 (RD-ley 15/2025) | Implementado (pendiente de confirmacion regulatoria) |
+| **Facturae / FACe** | B2G (sector público) | Facturae 3.2.2 + XAdES-EPES | Obligatorio desde 2015 (Ley 25/2013) | Implementado (pendiente de confirmacion regulatoria) |
+| **SII** | Facturación >6M EUR, grupos IVA, REDEME | XML SOAP/REST AEAT | Ya obligatorio (RD 596/2016) | Implementado (pendiente de confirmacion regulatoria) |
+| **TicketBAI** | Araba, Gipuzkoa, Bizkaia | XML provincial + XAdES + QR | Según provincia, 2022-2023 | Eliminado del alcance (v0.2.0) |
+| **Crea y Crece (B2B)** | Todas las empresas (umbral pendiente) | UBL 2.1 o Facturae 3.2.2 (EN 16931) | Reglamento de desarrollo pendiente | Implementado (pendiente de confirmacion regulatoria) |
 | **NaTicket** | Navarra | XML foral + firma | Mandato foral (implantacion escalonada) | Parcial (via `es__detect_regional_regime`) |
 
 > **Exclusion mutua SII / VERI\*FACTU (Real Decreto 254/2025):** Los contribuyentes
@@ -635,19 +635,6 @@ mcp-einvoicing-core (v0.1.0+)
 └── mcp-ksef-pl                    (Polonia — KSeF / FA(2))
 ```
 
-### Funciones candidatas a `mcp-einvoicing-core`
-
-| Funcion | Puntuacion | Accion |
-|---|---|---|
-| Firma digital XAdES | 3/3 (FR, ES, IT) | DEBE promoverse, abrir issue en `mcp-einvoicing-core` |
-| Generacion de codigo QR | 3/3 (FR, ES, TicketBAI) | DEBE promoverse |
-| Enrutador sandbox/produccion | 3/3 (FR, BE, ES) | DEBE promoverse |
-| Constructor de facturas rectificativas | 3/3 (BE, ES, FR) | DEBE promoverse |
-| Cadena hash de facturas (huella) | 2/3 (ES, FR NF525) | DEBERIA promoverse |
-| Registro de plazos de mandato | 2/3 (FR, ES) | DEBERIA promoverse |
-
----
-
 ## Notas de cumplimiento normativo
 
 > **Aviso:** Las fechas de mandato reflejan el RD-ley 15/2025 (diciembre 2025) y estan
@@ -695,116 +682,6 @@ uv run pytest --cov=mcp_facturacion_electronica_es --cov-report=term-missing
 
 ---
 
-## Hoja de ruta
-
-Los elementos pendientes se han extraido directamente de los marcadores `[NEED]` presentes en el codigo fuente. Cada version es un prerequisito de la siguiente y debe pasar el audit gate (`make audit`) antes de publicarse.
-
-### v0.1.0 (actual) — Scaffold y generacion local
-
-Herramientas implementadas con XML valido generado localmente, validacion estructural, logica de regimen y firma XAdES. Sin envios a plataformas externas confirmados contra entornos reales.
-
----
-
-### v0.2.0 — Bundle de esquemas XSD y correcciones de protocolo
-
-**Validacion XSD completa (ahora solo estructural):**
-
-| Tarea | Archivo | Referencia normativa |
-|---|---|---|
-| Descargar XSD v1.0 VERI\*FACTU en `specs/verifactu/` | `tools/verifactu.py` | BOE-A-2024-22138 (Orden HAC/1177/2024) |
-| Descargar XSD Facturae 3.2.2 en `specs/facturae/` | `tools/facturae.py` | facturae.gob.es |
-| Descargar XSD TicketBAI Araba v1.2 en `specs/ticketbai/araba/` | `tools/ticketbai.py` | batuz.eus |
-| Descargar XSD TicketBAI Gipuzkoa v1.2 en `specs/ticketbai/gipuzkoa/` | `tools/ticketbai.py` | gipuzkoa.eus |
-| Descargar XSD TicketBAI Bizkaia v2.1 en `specs/ticketbai/bizkaia/` | `tools/ticketbai.py` | bizkaia.eus |
-
-**Politicas de firma XAdES:**
-
-| Tarea | Archivo |
-|---|---|
-| Calcular SHA-256 del PDF de politica Facturae (Orden EHA/962/2007) y asignar `FACTURAE_POLICY_HASH` en `_helpers.py` | `_helpers.py`, `tools/facturae.py` |
-| Obtener y asignar los hash SHA-256 de las politicas provinciales TicketBAI (Araba, Gipuzkoa, Bizkaia) en `TICKETBAI_POLICY_IDS` | `_helpers.py`, `tools/ticketbai.py` |
-| Verificar los tres URI de politica TicketBAI contra la documentacion tecnica oficial de cada provincia | `_helpers.py` |
-
-**Correcciones de protocolo:**
-
-| Tarea | Archivo |
-|---|---|
-| Verificar el algoritmo HuellaTBAI contra la especificacion tecnica oficial (bytes en crudo, Base64 decodificado o texto?) | `tools/ticketbai.py` |
-| Rellenar el elemento `Claves` de TicketBAI con los tipos de factura correctos | `tools/ticketbai.py` |
-| Anadir `HoraExpedicionFactura` como parametro de entrada en `es__generate_ticketbai_xml` | `tools/ticketbai.py` |
-| Confirmar el formato exacto y los parametros de la URL del QR VERI\*FACTU (Art. 10 HAC/1177/2024) | `tools/verifactu.py` |
-| Anadir campos IBAN y BIC al bloque `AccountToBeCredited` de Facturae 3.2.2 | `tools/facturae.py` |
-
----
-
-### v0.3.0 — Verificacion de endpoints y sandbox
-
-**AEAT — VERI\*FACTU:**
-
-| Tarea | Archivo |
-|---|---|
-| Verificar la URL del endpoint sandbox de VERI\*FACTU una vez que la AEAT abra el entorno de pruebas | `tools/verifactu.py`, `_helpers.py` |
-| Confirmar la URL de produccion de VERI\*FACTU contra la guia tecnica publicada por la AEAT | `_helpers.py` |
-
-**AEAT — SII:**
-
-| Tarea | Archivo |
-|---|---|
-| Confirmar la URL del sandbox SII (`www7` o `www10`?) contra la guia tecnica SII v3.0 | `_helpers.py`, `tools/sii.py` |
-| Validar la estructura del SOAP envelope contra el sandbox SII v3.0 de la AEAT | `tools/sii.py` |
-
-**FACe:**
-
-| Tarea | Archivo |
-|---|---|
-| Verificar la ruta base de la API FACe B2B v2 (puede haber cambiado en 2025) | `_helpers.py` |
-| Verificar la URL del endpoint OAuth2 de FACe para sandbox y produccion | `tools/facturae.py` |
-| Validar el flujo OAuth2 completo de FACe contra credenciales reales del sandbox | `tools/facturae.py` |
-
-**TicketBAI:**
-
-| Tarea | Archivo |
-|---|---|
-| Verificar el endpoint sandbox de Araba (mismo que produccion con NIF de prueba?) | `_helpers.py` |
-| Verificar la ruta de la API LROE de Bizkaia (esquema de envio diferente al resto) | `_helpers.py` |
-| Confirmar el metodo de autenticacion por provincia (certificado MTLS, API key, etc.) | `tools/ticketbai.py` |
-
----
-
-### v0.4.0 — Cadena completa y lotes SII correctos
-
-| Tarea | Archivo | Detalle |
-|---|---|---|
-| Almacenar y propagar `IDEmisorFacturaAnterior`, `NumSerieFacturaAnterior` y `FechaAnterior` para el encadenamiento completo de VERI\*FACTU | `tools/verifactu.py` | Actualmente solo se encadena la `Huella`; la especificacion exige tambien los identificadores del registro anterior |
-| Fusionar multiples registros `RegistroLRFacturas` en un unico `SuministroLRFacturasEmitidas` para el lote SII real | `tools/sii.py` | El comportamiento actual envia cada registro por separado |
-| Construir el envelope SOAP `ConsultaFactInformadasEmitidas` / `ConsultaFactInformadasRecibidas` con filtro por `IDFactura` en `es__query_sii_status` | `tools/sii.py` | Actualmente envia una peticion GET generica |
-| Documentar o implementar el flujo de firma XAdES del registro VERI\*FACTU antes del envio | `tools/verifactu.py` | El registro generado por `es__generate_verifactu_record` debe firmarse antes de enviarse a la AEAT |
-| Parsear la respuesta AEAT en el handler `es__submit_verifactu_to_aeat` usando `es__parse_aeat_response` | `tools/verifactu.py` | Actualmente devuelve el texto crudo |
-
----
-
-### v0.5.0 — Crea y Crece B2B + endurecimiento del audit
-
-| Tarea | Archivo | Detalle |
-|---|---|---|
-| Confirmar los requisitos de formato B2B (UBL 2.1 vs. Facturae 3.2.2) una vez publicado el reglamento de desarrollo de la Ley 18/2022 | `tools/b2b.py` | El reglamento esta pendiente de publicacion a fecha de mayo 2026 |
-| Actualizar `_INTENTIONAL_OVERRIDES` y `_CORE_MODULES_TO_CHECK` en el audit una vez que la API publica de `mcp-einvoicing-core` este finalizada | `audit/audit_vs_core.py` | Reducira los 66 avisos actuales de CHECK 1 |
-| Sustituir el parser de versiones PEP 440 artesanal por `packaging.version` | `audit/audit_vs_core.py` | El parser actual solo soporta `>=X` y `<Y` |
-| Actualizar CHECK 5 con las comprobaciones adicionales del registro de categorias de herramientas de `mcp-einvoicing-core` | `audit/audit_vs_core.py` | — |
-
----
-
-### v1.0.0 — Preparado para produccion
-
-- Todas las verificaciones de sandbox completadas
-- Todas las validaciones XSD habilitadas (specs/ poblado)
-- Cobertura completa del mandato VERI\*FACTU (enero y julio 2027)
-- Software TicketBAI certificado por las tres provincias vascas
-- Reglamento Crea y Crece B2B publicado e implementado
-- Audit gate sin ningun aviso (exit code 0)
-
----
-
 ## Contribuir
 
 Abra un issue antes de iniciar trabajo significativo. Para logica de utilidad reutilizable
@@ -823,21 +700,6 @@ Todas las afirmaciones regulatorias deben referenciar una publicacion especifica
 una version oficial del XSD o una version de la guia tecnica de la AEAT. No elimine
 `⚠️ Pendiente de confirmacion regulatoria` sin enlazar la fuente verificada en la
 descripcion del PR.
-
----
-
-## Resumen del Audit — Fase 1
-
-| Verificacion | Resultado | Notas |
-|---|---|---|
-| Contrato con el core | PENDIENTE | Sin codigo fuente, todos los contratos definidos, ninguno implementado |
-| Cobertura de herramientas | 0/22 | Las 22 herramientas estan especificadas; ninguna implementada |
-| Exactitud regulatoria | 0/22 verificadas | Todas las herramientas llevan `⚠️` de implementacion pendiente |
-| Promocion al core | 6 candidatos | XAdES, QR, enrutador URL, cadena hash, factura rectificativa, registro de plazos |
-
-Este README es el **documento de especificacion** para la fase de implementacion.
-Los badges de las herramientas se actualizaran a ✅ a medida que cada herramienta supere
-la verificacion regulatoria.
 
 ---
 
