@@ -64,7 +64,7 @@ Repository = "https://github.com/cmendezs/mcp-facturacion-electronica-es"
 Issues = "https://github.com/cmendezs/mcp-facturacion-electronica-es/issues"
 
 [tool.hatch.build.targets.wheel]
-packages = ["mcp_facturacion_electronica_es"]
+packages = ["src/mcp_facturacion_electronica_es"]
 
 [tool.ruff]
 target-version = "py311"
