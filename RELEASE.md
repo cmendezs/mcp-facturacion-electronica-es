@@ -41,6 +41,29 @@ mcp-publisher publish
 
 ## Changelog
 
+### [0.5.0] - 2026-06-26
+#### Endpoint verification and sandbox scaffolding (Sprint 4)
+- **[ES-LC-10]** Full SII endpoint rewrite from bundled WSDLs: old wrong URLs (www7, BURT-JDIT)
+  replaced with canonical primary/secondary failover pairs from `SuministroFactEmitidas.wsdl`
+  and `SuministroFactRecibidas.wsdl`.
+- **[ES-LC-11]** Structural SII envelope validation (`test_sii_envelope_structure.py`, 12 tests).
+  Integration test stubs for SII and FACe sandbox (auto-skip without credentials).
+- **[ES-LC-12]** FACe base URLs rewritten from integrator manual: sandbox =
+  `se-api-face.redsara.es`, production = `api.face.gob.es`.
+- **[ES-LC-13]** FACe auth investigation: confirmed JWS-signed JWT (RS256, x5c header),
+  not OAuth2. Filed ES-LC-14 for the auth rewrite.
+- **[ES-LC-8/9]** VeriFactu endpoints: namespace-consistent with bundled XSDs but
+  unverified from authoritative source (AEAT technical guide not in bundled specs).
+
+#### Audit hardening (Sprint 5)
+- **[ES-AUD-1]** Refreshed `_INTENTIONAL_OVERRIDES` and `_ES_MODULES` in
+  `audit/audit_vs_core.py`: 107 CHECK 1 warnings reduced to 0.
+- **[ES-AUD-2]** Resolved-stale: no hand-rolled PEP 440 version parser found.
+- **[ES-CYC-1]** Added `b2b_format_resolved: false` flag to mandate applicability response.
+
+#### CI fix
+- Fixed `publish.yml` ruff/mypy paths for `src/` layout (was causing E902 on every CI run).
+
 ### [0.2.0] - 2026-06-02
 #### Fixed / Added
 - **[ES-LC-4] BLOCKING:** `RegistroAnterior` in VeriFactu now emits all 4 required
