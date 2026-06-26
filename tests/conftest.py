@@ -31,12 +31,12 @@ def _make_party(nif: str, name: str, city: str = "Madrid") -> InvoiceParty:
 
 @pytest.fixture()
 def seller() -> InvoiceParty:
-    return _make_party("B12345678", "Empresa de Prueba SL")
+    return _make_party("B12345674", "Empresa de Prueba SL")
 
 
 @pytest.fixture()
 def buyer() -> InvoiceParty:
-    return _make_party("A98765432", "Cliente de Prueba SA", city="Barcelona")
+    return _make_party("A98765431", "Cliente de Prueba SA", city="Barcelona")
 
 
 @pytest.fixture()

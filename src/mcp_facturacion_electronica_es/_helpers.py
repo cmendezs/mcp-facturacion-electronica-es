@@ -14,7 +14,7 @@ from typing import Any
 
 import mcp.types as types
 from mcp_einvoicing_core.exceptions import EInvoicingError
-from mcp_einvoicing_core.models import InvoiceDocument
+from mcp_einvoicing_core.models import InvoiceDocument, TaxIdentifier
 
 logger = logging.getLogger(__name__)
 
@@ -111,52 +111,93 @@ def face_env() -> str:
 # ---------------------------------------------------------------------------
 
 #: VERI*FACTU submission endpoints (immutable — MappingProxyType prevents runtime mutation)
-VERIFACTU_ENDPOINTS: MappingProxyType[str, str] = MappingProxyType({
-    "sandbox": (
-        "https://prewww2.aeat.es/wlpl/TIKE-CONT/ws/SistemaFacturacion/FactSistemaFacturacion"
-    ),
-    "production": (
-        "https://www2.agenciatributaria.gob.es"
-        "/wlpl/TIKE-CONT/ws/SistemaFacturacion/FactSistemaFacturacion"
-    ),
-    # [NEED: verify production URL against published AEAT technical guide]
-})
+VERIFACTU_ENDPOINTS: MappingProxyType[str, str] = MappingProxyType(
+    {
+        "sandbox": (
+            "https://prewww2.aeat.es/wlpl/TIKE-CONT/ws/SistemaFacturacion/FactSistemaFacturacion"
+        ),
+        "production": (
+            "https://www2.agenciatributaria.gob.es"
+            "/wlpl/TIKE-CONT/ws/SistemaFacturacion/FactSistemaFacturacion"
+        ),
+        # [NEED: verify production URL against published AEAT technical guide]
+    }
+)
 
 #: SII issued-invoice submission endpoints (immutable)
-SII_ISSUED_ENDPOINTS: MappingProxyType[str, str] = MappingProxyType({
-    "sandbox": (
-        "https://www7.aeat.es/wlpl/BURT-JDIT/ws/fe/SiiEndPointFacultativoRecepcion"
-    ),
-    "production": (
-        "https://www2.agenciatributaria.gob.es"
-        "/wlpl/BURT-JDIT/ws/fe/SiiEndPointFacultativoRecepcion"
-    ),
-    # [NEED: verify sandbox URL — AEAT may use www7 or www10]
-})
+SII_ISSUED_ENDPOINTS: MappingProxyType[str, str] = MappingProxyType(
+    {
+        "sandbox": ("https://www7.aeat.es/wlpl/BURT-JDIT/ws/fe/SiiEndPointFacultativoRecepcion"),
+        "production": (
+            "https://www2.agenciatributaria.gob.es"
+            "/wlpl/BURT-JDIT/ws/fe/SiiEndPointFacultativoRecepcion"
+        ),
+        # [NEED: verify sandbox URL — AEAT may use www7 or www10]
+    }
+)
 
 #: SII received-invoice submission endpoints (immutable)
-SII_RECEIVED_ENDPOINTS: MappingProxyType[str, str] = MappingProxyType({
-    "sandbox": (
-        "https://www7.aeat.es/wlpl/BURT-JDIT/ws/fr/SiiEndPointFacultativoRecepcion"
-    ),
-    "production": (
-        "https://www2.agenciatributaria.gob.es"
-        "/wlpl/BURT-JDIT/ws/fr/SiiEndPointFacultativoRecepcion"
-    ),
-})
+SII_RECEIVED_ENDPOINTS: MappingProxyType[str, str] = MappingProxyType(
+    {
+        "sandbox": ("https://www7.aeat.es/wlpl/BURT-JDIT/ws/fr/SiiEndPointFacultativoRecepcion"),
+        "production": (
+            "https://www2.agenciatributaria.gob.es"
+            "/wlpl/BURT-JDIT/ws/fr/SiiEndPointFacultativoRecepcion"
+        ),
+    }
+)
 
 #: FACe B2B REST API v2 base URLs (immutable)
-FACE_BASE_URLS: MappingProxyType[str, str] = MappingProxyType({
-    "sandbox": "https://se-face.redsara.es/factura-face-b2b-api/api/v2",
-    "production": "https://face.gob.es/factura-face-b2b-api/api/v2",
-    # [NEED: verify — FACe may have changed API base path in 2025]
-})
+FACE_BASE_URLS: MappingProxyType[str, str] = MappingProxyType(
+    {
+        "sandbox": "https://se-face.redsara.es/factura-face-b2b-api/api/v2",
+        "production": "https://face.gob.es/factura-face-b2b-api/api/v2",
+    }
+)
+
+# ---------------------------------------------------------------------------
+# Spanish tax-ID validation (NIF / NIE / CIF prefix routing)
+# ---------------------------------------------------------------------------
+
+
+def validate_spanish_tax_id(value: str) -> tuple[bool, str]:
+    """Route a Spanish tax identifier to the appropriate core validator.
+
+    Prefix routing:
+        [0-9] or [KLM] -> NIF (individuals, foreign nationals with K/L/M prefix)
+        [XYZ]           -> NIE (foreigners)
+        [ABCDEFGHJNPQRSUVW] -> CIF (companies)
+
+    Returns:
+        (True, "") on success, (False, error_message) on failure.
+    """
+    cleaned = value.strip().upper()
+    if not cleaned:
+        return False, "Empty tax identifier."
+    first = cleaned[0]
+    if first.isdigit() or first in {"K", "L", "M"}:
+        return TaxIdentifier.validate_es_nif(cleaned)
+    if first in {"X", "Y", "Z"}:
+        return TaxIdentifier.validate_es_nie(cleaned)
+    if first in set("ABCDEFGHJNPQRSUVW"):
+        return TaxIdentifier.validate_es_cif(cleaned)
+    return False, f"Unrecognised Spanish tax-ID prefix '{first}'."
+
 
 #: Facturae XAdES-EPES signature policy (Orden EHA/962/2007)
 FACTURAE_POLICY_ID = (
     "http://www.facturae.es/politica_de_firma_formato_facturae"
     "/politica_de_firma_formato_facturae_v3_1.pdf"
 )
-#: [NEED: compute SHA-256 of the policy PDF from facturae.gob.es and set here]
-FACTURAE_POLICY_HASH: str | None = None
+#: SHA-1 digest from the AEAT-validated .xsig example (specs/facturae/examples/)
+FACTURAE_POLICY_HASH: str = "Ohixl6upD6av8N7pEvDABhEL6hM="
+FACTURAE_POLICY_HASH_ALGORITHM: str = "http://www.w3.org/2000/09/xmldsig#sha1"
+#: SHA-256 fallback (inactive until AEAT mandates SHA-256 for policy digest)
+FACTURAE_POLICY_HASH_SHA256: str | None = None
+FACTURAE_POLICY_HASH_SHA256_ALGORITHM: str = "http://www.w3.org/2001/04/xmlenc#sha256"
 
+# VeriFactu re-chaining: on permanent submission failure, the caller must persist
+# the prior Huella so the next record can chain correctly. The chain is broken if
+# a record is generated but never accepted by AEAT, because subsequent records
+# reference its Huella. Callers should store (emisor_nif, num_serie, fecha, huella)
+# for each generated record and re-submit with the last accepted Huella on retry.

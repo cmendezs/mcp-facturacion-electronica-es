@@ -12,9 +12,9 @@ FACe REST API v2:
 XAdES-EPES policy (Orden EHA/962/2007):
     URI: http://www.facturae.es/politica_de_firma_formato_facturae/
          politica_de_firma_formato_facturae_v3_1.pdf
-    [NEED: compute SHA-256 of the policy PDF and set FACTURAE_POLICY_HASH in _helpers.py]
+    Hash: SHA-1, from AEAT-validated .xsig (FACTURAE_POLICY_HASH in _helpers.py)
 
-[NEED: validate FACe REST API v2 OAuth2 flow against live FACe sandbox credentials]
+FACe authentication: JWT (JWS-signed tokens), not OAuth2.
 """
 
 from __future__ import annotations
@@ -76,11 +76,36 @@ def _build_tax_id_block(party_elem: etree._Element, party: Any) -> None:
     _sub(ti, "TaxIdentificationNumber", party.tax_id.identifier)
 
 
-_EU_COUNTRIES = frozenset({
-    "AT", "BE", "BG", "CY", "CZ", "DE", "DK", "EE", "FI", "FR", "GR",
-    "HR", "HU", "IE", "IT", "LT", "LU", "LV", "MT", "NL", "PL", "PT",
-    "RO", "SE", "SI", "SK",
-})
+_EU_COUNTRIES = frozenset(
+    {
+        "AT",
+        "BE",
+        "BG",
+        "CY",
+        "CZ",
+        "DE",
+        "DK",
+        "EE",
+        "FI",
+        "FR",
+        "GR",
+        "HR",
+        "HU",
+        "IE",
+        "IT",
+        "LT",
+        "LU",
+        "LV",
+        "MT",
+        "NL",
+        "PL",
+        "PT",
+        "RO",
+        "SE",
+        "SI",
+        "SK",
+    }
+)
 
 
 def _build_legal_block(party_elem: etree._Element, party: Any) -> None:
@@ -89,7 +114,9 @@ def _build_legal_block(party_elem: etree._Element, party: Any) -> None:
         le = _sub(party_elem, "LegalEntity")
         _sub(le, "CorporateName", party.name[:80])
         if party.address:
-            addr = _sub(le, "AddressInSpain" if party.tax_id.country_code == "ES" else "OverseasAddress")
+            addr = _sub(
+                le, "AddressInSpain" if party.tax_id.country_code == "ES" else "OverseasAddress"
+            )
             _sub(addr, "Address", party.address.street[:80])
             _sub(addr, "PostCode", party.address.postal_code[:10])
             _sub(addr, "Town", party.address.city[:50])
@@ -102,11 +129,21 @@ def _build_legal_block(party_elem: etree._Element, party: Any) -> None:
         _sub(ind, "FirstSurname", party.last_name or "")
 
 
-def build_facturae_xml(invoice: InvoiceDocument) -> bytes:
+def build_facturae_xml(
+    invoice: InvoiceDocument,
+    invoice_issuer_type: str = "EU",
+    irpf_amount: Decimal | None = None,
+    resolution_reference: str | None = None,
+    receiver_transaction_reference: str | None = None,
+) -> bytes:
     """Build a Facturae 3.2.2 XML document from an InvoiceDocument.
 
     Args:
         invoice: Validated core InvoiceDocument.
+        invoice_issuer_type: "EU" (private seller), "EM" (issuer is buyer), "TE" (third party).
+        irpf_amount: IRPF withholding amount to deduct from invoice total.
+        resolution_reference: PA resolution reference (B2G invoices).
+        receiver_transaction_reference: PA receiver transaction reference (B2G invoices).
 
     Returns:
         UTF-8 encoded Facturae 3.2.2 XML bytes (unsigned).
@@ -122,7 +159,7 @@ def build_facturae_xml(invoice: InvoiceDocument) -> bytes:
     fh = _sub(root, "FileHeader")
     _sub(fh, "SchemaVersion", "3.2.2")
     _sub(fh, "Modality", "I")  # I = individual invoice
-    _sub(fh, "InvoiceIssuerType", "EU")  # EU = private seller
+    _sub(fh, "InvoiceIssuerType", invoice_issuer_type)
 
     # Compute totals
     tax_base = sum((v.taxable_base for v in invoice.vat_summary), Decimal("0"))
@@ -157,7 +194,11 @@ def build_facturae_xml(invoice: InvoiceDocument) -> bytes:
     ih = _sub(inv, "InvoiceHeader")
     _sub(ih, "InvoiceNumber", invoice.number)
     _sub(ih, "InvoiceDocumentType", "FC")  # FC = complete invoice
-    _sub(ih, "InvoiceClass", "OO")          # OO = original
+    _sub(ih, "InvoiceClass", "OO")  # OO = original
+    if resolution_reference:
+        _sub(ih, "ResolutionReference", resolution_reference)
+    if receiver_transaction_reference:
+        _sub(ih, "ReceiverTransactionReference", receiver_transaction_reference)
 
     iid = _sub(inv, "InvoiceIssueData")
     _sub(iid, "IssueDate", invoice.date)
@@ -183,10 +224,12 @@ def build_facturae_xml(invoice: InvoiceDocument) -> bytes:
     _sub(totals, "TotalGeneralSurcharges", "0.00")
     _sub(totals, "TotalGrossAmountBeforeTaxes", fmt_amount(tax_base))
     _sub(totals, "TotalTaxOutputs", fmt_amount(tax_total))
-    _sub(totals, "TotalTaxesWithheld", "0.00")
-    _sub(totals, "InvoiceTotal", fmt_amount(grand_total))
-    _sub(totals, "TotalOutstandingAmount", fmt_amount(grand_total))
-    _sub(totals, "TotalExecutableAmount", fmt_amount(grand_total))
+    withheld = irpf_amount or Decimal("0")
+    _sub(totals, "TotalTaxesWithheld", fmt_amount(withheld))
+    invoice_total = grand_total - withheld
+    _sub(totals, "InvoiceTotal", fmt_amount(invoice_total))
+    _sub(totals, "TotalOutstandingAmount", fmt_amount(invoice_total))
+    _sub(totals, "TotalExecutableAmount", fmt_amount(invoice_total))
 
     # Items
     if invoice.lines:
@@ -206,7 +249,7 @@ def build_facturae_xml(invoice: InvoiceDocument) -> bytes:
             ltb = _sub(lt, "TaxableBase")
             _sub(ltb, "TotalAmount", fmt_amount(line.total_price))
             lta = _sub(lt, "TaxAmount")
-            _sub(lta, "TotalAmount", fmt_amount(line.total_price * line.vat_rate / 100))
+            _sub(lta, "TotalAmount", fmt_amount(line.total_price * line.vat_rate / Decimal("100")))
 
     # PaymentDetails (if provided)
     if invoice.payment:
@@ -216,9 +259,10 @@ def build_facturae_xml(invoice: InvoiceDocument) -> bytes:
         _sub(installment, "InstallmentAmount", fmt_amount(invoice.payment.amount))
         _sub(installment, "PaymentMeans", invoice.payment.payment_method_code or "01")
         if invoice.payment.iban:
-            _sub(installment, "AccountToBeCredited")
-            # AccountToBeCredited needs full bank details; simplified here
-            # [NEED: add IBAN and BIC fields per Facturae 3.2.2 schema]
+            acct = _sub(installment, "AccountToBeCredited")
+            _sub(acct, "IBAN", invoice.payment.iban)
+            if invoice.payment.bic:
+                _sub(acct, "BankCode", invoice.payment.bic)
 
     return etree.tostring(root, xml_declaration=True, encoding="UTF-8", pretty_print=True)
 
@@ -363,15 +407,26 @@ async def handle_es_generate_facturae_xml(
             return err("invoice is required", "MISSING_PARAM")
 
         invoice = parse_invoice(invoice_data)
-        xml_bytes = build_facturae_xml(invoice)
+        invoice_issuer_type: str = arguments.get("invoice_issuer_type", "EU")
+        irpf_amount_str = arguments.get("irpf_amount")
+        irpf_amt = Decimal(str(irpf_amount_str)) if irpf_amount_str is not None else None
+        xml_bytes = build_facturae_xml(
+            invoice,
+            invoice_issuer_type=invoice_issuer_type,
+            irpf_amount=irpf_amt,
+            resolution_reference=arguments.get("resolution_reference"),
+            receiver_transaction_reference=arguments.get("receiver_transaction_reference"),
+        )
 
         logger.info("Facturae 3.2.2 XML generated for invoice %s", invoice.number)
-        return ok({
-            "xml": xml_bytes.decode("utf-8"),
-            "schema_version": "3.2.2",
-            "invoice_number": invoice.number,
-            "next_step": "Use es__sign_facturae_xades to apply XAdES-EPES signature before submitting to FACe.",
-        })
+        return ok(
+            {
+                "xml": xml_bytes.decode("utf-8"),
+                "schema_version": "3.2.2",
+                "invoice_number": invoice.number,
+                "next_step": "Use es__sign_facturae_xades to apply XAdES-EPES signature before submitting to FACe.",
+            }
+        )
 
     except EInvoicingError as exc:
         return err(str(exc))
@@ -392,30 +447,21 @@ async def handle_es_sign_facturae_xades(
         assert_not_read_only("AEAT_READ_ONLY")
         gate = ConfirmationGate.get_default()
         if not gate.is_confirmed(confirmation_token):
-            return ok(gate.pending_response(
-                action="es__sign_facturae_xades",
-                summary=(
-                    "Apply XAdES-EPES signature to a Facturae XML document using the "
-                    "FNMT-RCM PKCS#12 certificate. The signed XML will contain a "
-                    "legally binding electronic signature."
-                ),
-                token=confirmation_token,
-            ))
+            return ok(
+                gate.pending_response(
+                    action="es__sign_facturae_xades",
+                    summary=(
+                        "Apply XAdES-EPES signature to a Facturae XML document using the "
+                        "FNMT-RCM PKCS#12 certificate. The signed XML will contain a "
+                        "legally binding electronic signature."
+                    ),
+                    token=confirmation_token,
+                )
+            )
 
         policy_id: str = arguments.get("signature_policy_id") or FACTURAE_POLICY_ID
         policy_hash: str | None = arguments.get("signature_policy_hash") or FACTURAE_POLICY_HASH
 
-        # ES-SC-3: FACTURAE_POLICY_HASH is None until the SHA-256 of the policy PDF
-        # (Orden EHA/962/2007) is computed and set in _helpers.py.
-        # XAdES-EPES requires a non-null policy hash for full EPES conformance.
-        # We continue with None (core XAdES signer handles it gracefully) but log a warning.
-        if not policy_hash:
-            logger.warning(
-                "es__sign_facturae_xades: FACTURAE_POLICY_HASH is not set — "
-                "signature will lack the policy hash required for full XAdES-EPES "
-                "conformance (Orden EHA/962/2007). "
-                "Compute SHA-256 of the policy PDF and set FACTURAE_POLICY_HASH in _helpers.py."
-            )
         xml_bytes = xml_str.encode() if isinstance(xml_str, str) else xml_str
 
         if SignerClient.is_configured():
@@ -484,8 +530,10 @@ async def handle_es_submit_to_face(
         confirmation_token: str | None = arguments.get("confirmation_token") or None
 
         for name, val in [
-            ("xml", xml_str), ("administrative_unit", admin_unit),
-            ("accounting_office", accounting_office), ("management_body", management_body),
+            ("xml", xml_str),
+            ("administrative_unit", admin_unit),
+            ("accounting_office", accounting_office),
+            ("management_body", management_body),
         ]:
             if not val:
                 return err(f"{name} is required", "MISSING_PARAM")
@@ -494,15 +542,17 @@ async def handle_es_submit_to_face(
         gate = ConfirmationGate.get_default()
         if not gate.is_confirmed(confirmation_token):
             env_label = face_env()
-            return ok(gate.pending_response(
-                action="es__submit_to_face",
-                summary=(
-                    f"Submit Facturae XML to FACe ({env_label}) for unit "
-                    f"{admin_unit!r} / office {accounting_office!r}. "
-                    "This registers the invoice with the government B2B platform."
-                ),
-                token=confirmation_token,
-            ))
+            return ok(
+                gate.pending_response(
+                    action="es__submit_to_face",
+                    summary=(
+                        f"Submit Facturae XML to FACe ({env_label}) for unit "
+                        f"{admin_unit!r} / office {accounting_office!r}. "
+                        "This registers the invoice with the government B2B platform."
+                    ),
+                    token=confirmation_token,
+                )
+            )
 
         client_id = aeat_settings.face_client_id or ""
         client_secret = aeat_settings.face_client_secret or ""
@@ -541,11 +591,15 @@ async def handle_es_submit_to_face(
         )
 
         gate.consume(confirmation_token)
-        return ok({
-            "status_code": response.status_code,
-            "environment": env,
-            "response": response.json() if response.headers.get("content-type", "").startswith("application/json") else response.text[:2000],
-        })
+        return ok(
+            {
+                "status_code": response.status_code,
+                "environment": env,
+                "response": response.json()
+                if response.headers.get("content-type", "").startswith("application/json")
+                else response.text[:2000],
+            }
+        )
 
     except Exception as exc:
         logger.exception("es__submit_to_face failed")
@@ -581,7 +635,11 @@ async def handle_es_get_face_invoice_status(
         )
 
         response = await client._request("GET", f"/facturas/{invoice_id}")
-        body = response.json() if response.headers.get("content-type", "").startswith("application/json") else {"raw": response.text}
+        body = (
+            response.json()
+            if response.headers.get("content-type", "").startswith("application/json")
+            else {"raw": response.text}
+        )
 
         # Map known FACe status codes
         status_codes = {
@@ -591,13 +649,15 @@ async def handle_es_get_face_invoice_status(
             "4100": "Pagada",
         }
         raw_status = str(body.get("codigo", body.get("status", "")))
-        return ok({
-            "invoice_id": invoice_id,
-            "status_code": raw_status,
-            "status_description": status_codes.get(raw_status, "Desconocido"),
-            "environment": env,
-            "response": body,
-        })
+        return ok(
+            {
+                "invoice_id": invoice_id,
+                "status_code": raw_status,
+                "status_description": status_codes.get(raw_status, "Desconocido"),
+                "environment": env,
+                "response": body,
+            }
+        )
 
     except Exception as exc:
         logger.exception("es__get_face_invoice_status failed")
@@ -616,12 +676,14 @@ async def handle_es_validate_facturae_schema(
         try:
             root = safe_fromstring(xml_bytes)
         except etree.XMLSyntaxError as exc:
-            return ok({
-                "valid": False,
-                "errors": [f"XML malformado: {exc}"],
-                "warnings": [],
-                "validation_mode": "structural",
-            })
+            return ok(
+                {
+                    "valid": False,
+                    "errors": [f"XML malformado: {exc}"],
+                    "warnings": [],
+                    "validation_mode": "structural",
+                }
+            )
 
         errors: list[str] = []
         warnings: list[str] = []
@@ -631,19 +693,28 @@ async def handle_es_validate_facturae_schema(
                 errors.append(f"Elemento obligatorio ausente: <{tag}>")
 
         for tag in [
-            "SchemaVersion", "Modality", "InvoiceIssuerType",
-            "SellerParty", "BuyerParty",
-            "InvoiceNumber", "IssueDate",
-            "TaxesOutputs", "InvoiceTotals",
+            "SchemaVersion",
+            "Modality",
+            "InvoiceIssuerType",
+            "SellerParty",
+            "BuyerParty",
+            "InvoiceNumber",
+            "IssueDate",
+            "TaxesOutputs",
+            "InvoiceTotals",
         ]:
             _req(tag)
 
         # XSD validation — Facturaev3_2_2.xml uses .xml extension intentionally
         # (the targetNamespace URI itself ends in Facturaev3_2_2.xml)
         import pathlib  # noqa: PLC0415
+
         xsd_path = (
             pathlib.Path(__file__).parent.parent.parent
-            / "specs" / "facturae" / "xsd" / "Facturaev3_2_2.xml"
+            / "specs"
+            / "facturae"
+            / "xsd"
+            / "Facturaev3_2_2.xml"
         )
         validation_mode = "structural"
 
@@ -662,12 +733,14 @@ async def handle_es_validate_facturae_schema(
                 "no encontrado. La validación estructural está activa."
             )
 
-        return ok({
-            "valid": len(errors) == 0,
-            "errors": errors,
-            "warnings": warnings,
-            "validation_mode": validation_mode,
-        })
+        return ok(
+            {
+                "valid": len(errors) == 0,
+                "errors": errors,
+                "warnings": warnings,
+                "validation_mode": validation_mode,
+            }
+        )
 
     except Exception as exc:
         logger.exception("es__validate_facturae_schema failed")

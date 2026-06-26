@@ -46,7 +46,7 @@ def test_build_facturae_xml_seller_buyer(minimal_invoice) -> None:
 
     seller_nif = seller.find(f".//{{{_FACTURAE_NS}}}TaxIdentificationNumber")
     assert seller_nif is not None
-    assert seller_nif.text == "B12345678"
+    assert seller_nif.text == "B12345674"
 
 
 def test_build_facturae_xml_vat(minimal_invoice) -> None:
@@ -125,3 +125,88 @@ async def test_handle_validate_facturae_schema_invalid_xml() -> None:
     data = json.loads(result[0].text)
     assert data["valid"] is False
     assert len(data["errors"]) > 0
+
+
+# ---------------------------------------------------------------------------
+# Batch 2: Decimal precision in line tax amounts
+# ---------------------------------------------------------------------------
+
+
+# ---------------------------------------------------------------------------
+# Batch 3: InvoiceIssuerType, IRPF withholding, AccountToBeCredited, policy hash
+# ---------------------------------------------------------------------------
+
+
+def test_facturae_invoice_issuer_type_em(minimal_invoice) -> None:
+    xml_bytes = build_facturae_xml(minimal_invoice, invoice_issuer_type="EM")
+    root = etree.fromstring(xml_bytes)
+    ns = {"fe": _FACTURAE_NS}
+    iit = root.find(".//fe:InvoiceIssuerType", ns)
+    assert iit is not None
+    assert iit.text == "EM"
+
+
+def test_facturae_invoice_issuer_type_te(minimal_invoice) -> None:
+    xml_bytes = build_facturae_xml(minimal_invoice, invoice_issuer_type="TE")
+    root = etree.fromstring(xml_bytes)
+    ns = {"fe": _FACTURAE_NS}
+    iit = root.find(".//fe:InvoiceIssuerType", ns)
+    assert iit is not None
+    assert iit.text == "TE"
+
+
+def test_facturae_irpf_withholding(minimal_invoice) -> None:
+    from decimal import Decimal as D
+
+    xml_bytes = build_facturae_xml(minimal_invoice, irpf_amount=D("150.00"))
+    root = etree.fromstring(xml_bytes)
+    ns = {"fe": _FACTURAE_NS}
+    withheld = root.find(".//fe:TotalTaxesWithheld", ns)
+    assert withheld is not None
+    assert withheld.text == "150.00"
+    invoice_total = root.find(".//fe:InvoiceTotal", ns)
+    assert invoice_total is not None
+    assert D(invoice_total.text) == D("1060.00")
+
+
+def test_facturae_resolution_reference(minimal_invoice) -> None:
+    xml_bytes = build_facturae_xml(
+        minimal_invoice,
+        resolution_reference="RES-2025-001",
+        receiver_transaction_reference="RTR-2025-001",
+    )
+    root = etree.fromstring(xml_bytes)
+    ns = {"fe": _FACTURAE_NS}
+    rr = root.find(".//fe:ResolutionReference", ns)
+    assert rr is not None
+    assert rr.text == "RES-2025-001"
+    rtr = root.find(".//fe:ReceiverTransactionReference", ns)
+    assert rtr is not None
+    assert rtr.text == "RTR-2025-001"
+
+
+def test_facturae_policy_hash_set() -> None:
+    from mcp_facturacion_electronica_es._helpers import (
+        FACTURAE_POLICY_HASH,
+        FACTURAE_POLICY_HASH_ALGORITHM,
+    )
+
+    assert FACTURAE_POLICY_HASH is not None
+    assert len(FACTURAE_POLICY_HASH) > 0
+    assert "sha1" in FACTURAE_POLICY_HASH_ALGORITHM
+
+
+def test_facturae_line_tax_decimal_precision(minimal_invoice) -> None:
+    """Tax amount must use Decimal division, not float."""
+    from decimal import Decimal as D
+
+    from mcp_facturacion_electronica_es.tools.facturae import build_facturae_xml
+
+    xml_bytes = build_facturae_xml(minimal_invoice)
+    root = etree.fromstring(xml_bytes)
+    ns = {"fe": _FACTURAE_NS}
+    tax_amounts = root.findall(".//fe:InvoiceLine//fe:TaxAmount/fe:TotalAmount", ns)
+    assert len(tax_amounts) >= 1
+    for ta in tax_amounts:
+        val = D(ta.text)
+        assert val == val.quantize(D("0.01"))

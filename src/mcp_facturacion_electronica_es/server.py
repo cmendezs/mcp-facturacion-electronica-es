@@ -95,29 +95,29 @@ _ALL_TOOLS: list[types.Tool] = [
 
 _TOOL_HANDLERS: dict[str, Any] = {
     # VERI*FACTU
-    "es__generate_verifactu_record":      handle_es_generate_verifactu_record,
-    "es__validate_verifactu_record":      handle_es_validate_verifactu_record,
-    "es__submit_verifactu_to_aeat":       handle_es_submit_verifactu_to_aeat,
-    "es__generate_qr_verifactu":          handle_es_generate_qr_verifactu,
-    "es__cancel_verifactu_record":        handle_es_cancel_verifactu_record,
+    "es__generate_verifactu_record": handle_es_generate_verifactu_record,
+    "es__validate_verifactu_record": handle_es_validate_verifactu_record,
+    "es__submit_verifactu_to_aeat": handle_es_submit_verifactu_to_aeat,
+    "es__generate_qr_verifactu": handle_es_generate_qr_verifactu,
+    "es__cancel_verifactu_record": handle_es_cancel_verifactu_record,
     # Facturae / FACe
-    "es__generate_facturae_xml":          handle_es_generate_facturae_xml,
-    "es__sign_facturae_xades":            handle_es_sign_facturae_xades,
-    "es__submit_to_face":                 handle_es_submit_to_face,
-    "es__get_face_invoice_status":        handle_es_get_face_invoice_status,
-    "es__validate_facturae_schema":       handle_es_validate_facturae_schema,
+    "es__generate_facturae_xml": handle_es_generate_facturae_xml,
+    "es__sign_facturae_xades": handle_es_sign_facturae_xades,
+    "es__submit_to_face": handle_es_submit_to_face,
+    "es__get_face_invoice_status": handle_es_get_face_invoice_status,
+    "es__validate_facturae_schema": handle_es_validate_facturae_schema,
     # SII
-    "es__build_sii_invoice_record":       handle_es_build_sii_invoice_record,
-    "es__submit_sii_batch":               handle_es_submit_sii_batch,
-    "es__query_sii_status":               handle_es_query_sii_status,
-    "es__generate_sii_correction":        handle_es_generate_sii_correction,
+    "es__build_sii_invoice_record": handle_es_build_sii_invoice_record,
+    "es__submit_sii_batch": handle_es_submit_sii_batch,
+    "es__query_sii_status": handle_es_query_sii_status,
+    "es__generate_sii_correction": handle_es_generate_sii_correction,
     # Crea y Crece / B2B
-    "es__generate_b2b_einvoice_es":       handle_es_generate_b2b_einvoice_es,
+    "es__generate_b2b_einvoice_es": handle_es_generate_b2b_einvoice_es,
     "es__check_b2b_mandate_applicability": handle_es_check_b2b_mandate_applicability,
     # Utilities
-    "es__detect_regional_regime":         handle_es_detect_regional_regime,
-    "es__get_compliance_status":          handle_es_get_compliance_status,
-    "es__parse_aeat_response":            handle_es_parse_aeat_response,
+    "es__detect_regional_regime": handle_es_detect_regional_regime,
+    "es__get_compliance_status": handle_es_get_compliance_status,
+    "es__parse_aeat_response": handle_es_parse_aeat_response,
 }
 
 
@@ -135,14 +135,17 @@ def _build_server() -> Server:
         if handler is None:
             raise ValueError(f"Unknown tool: {name!r}")
         # ES-SH-4: redact credential fields before logging to prevent plaintext password leak
-        _REDACTED_KEYS = frozenset({
-            "cert_password", "certificate_password", "client_secret",
-            "face_client_secret", "password", "token",
-        })
-        safe_args = {
-            k: "***" if k in _REDACTED_KEYS else v
-            for k, v in arguments.items()
-        }
+        _REDACTED_KEYS = frozenset(
+            {
+                "cert_password",
+                "certificate_password",
+                "client_secret",
+                "face_client_secret",
+                "password",
+                "token",
+            }
+        )
+        safe_args = {k: "***" if k in _REDACTED_KEYS else v for k, v in arguments.items()}
         logger.debug("Dispatching tool %r with args %r", name, safe_args)
         return await handler(arguments)
 

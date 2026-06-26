@@ -52,6 +52,111 @@ _SII_VERSION = "1.1"
 # ---------------------------------------------------------------------------
 
 
+def _mask_nif(nif: str) -> str:
+    """Mask a NIF for safe logging: retain first 4 and last 1 characters."""
+    if len(nif) <= 5:
+        return nif[:1] + "***" + nif[-1:]
+    return nif[:4] + "*" * (len(nif) - 5) + nif[-1:]
+
+
+def _parse_sii_response(raw: str) -> dict[str, Any]:
+    """Parse an AEAT SII SOAP response into a structured dict with masked NIFs.
+
+    Returns:
+        {
+            "estado_envio": str,
+            "csv": str | None,
+            "accepted": [...],
+            "rejected": [{"nif_masked", "error_code", "message"}],
+        }
+    """
+    result: dict[str, Any] = {
+        "estado_envio": None,
+        "csv": None,
+        "accepted": [],
+        "rejected": [],
+    }
+    if not raw:
+        return result
+    try:
+        root = safe_fromstring(raw.encode() if isinstance(raw, str) else raw)
+        estado_elems = root.xpath(".//*[local-name()='EstadoEnvio']")
+        if estado_elems:
+            result["estado_envio"] = estado_elems[0].text
+        csv_elems = root.xpath(".//*[local-name()='CSV']")
+        if csv_elems:
+            result["csv"] = csv_elems[0].text
+
+        for linea in root.xpath(".//*[local-name()='RespuestaLinea']"):
+            estado = None
+            error_code = None
+            message = None
+            nif = None
+            for child in linea.iter():
+                tag = etree.QName(child.tag).localname if isinstance(child.tag, str) else ""
+                if tag == "EstadoRegistro":
+                    estado = child.text
+                elif tag == "CodigoErrorRegistro":
+                    error_code = child.text
+                elif tag == "DescripcionErrorRegistro":
+                    message = child.text
+                elif tag == "NIF":
+                    nif = child.text
+            entry: dict[str, Any] = {"estado": estado}
+            if nif:
+                entry["nif_masked"] = _mask_nif(nif)
+            if estado == "Correcto":
+                result["accepted"].append(entry)
+            else:
+                entry["error_code"] = error_code
+                entry["message"] = message
+                result["rejected"].append(entry)
+    except Exception as exc:
+        result["parse_error"] = f"Could not parse SII response: {exc}"
+    return result
+
+
+def _merge_sii_records(
+    records_xml: list[str],
+    seller_nif: str,
+    seller_name: str,
+    comm_type: str,
+    record_type: SIIRecordType,
+) -> bytes:
+    """Merge multiple SII record XML strings into one SuministroLR envelope.
+
+    Per SII spec, up to 10,000 RegistroLRFacturas fit in a single envelope.
+    """
+    nsmap_soap = {
+        "soapenv": _SOAP_NS,
+        "sii": _SII_NS,
+    }
+    envelope = etree.Element(f"{{{_SOAP_NS}}}Envelope", nsmap=nsmap_soap)
+    _sub(envelope, f"{{{_SOAP_NS}}}Header")
+    body = _sub(envelope, f"{{{_SOAP_NS}}}Body")
+
+    if record_type == SIIRecordType.issued:
+        suministro_tag = "SuministroLRFacturasEmitidas"
+    else:
+        suministro_tag = "SuministroLRFacturasRecibidas"
+
+    suministro = etree.SubElement(body, f"{{{_SII_NS}}}{suministro_tag}")
+
+    cab = _build_cabecera(seller_nif, seller_name, comm_type)
+    suministro.append(safe_fromstring(etree.tostring(cab)))
+
+    for xml_str in records_xml:
+        xml_bytes = xml_str.encode() if isinstance(xml_str, str) else xml_str
+        record_root = safe_fromstring(xml_bytes)
+        registros = record_root.xpath(".//*[local-name()='RegistroLRFacturasEmitidas']")
+        if not registros:
+            registros = record_root.xpath(".//*[local-name()='RegistroLRFacturasRecibidas']")
+        for reg in registros:
+            suministro.append(reg)
+
+    return etree.tostring(envelope, xml_declaration=True, encoding="UTF-8", pretty_print=True)
+
+
 def _sub(parent: etree._Element, tag: str, text: str | None = None) -> etree._Element:
     child = etree.SubElement(parent, tag)
     if text is not None:
@@ -99,12 +204,16 @@ def _build_periodo(fiscal_year: int, invoice_date: str) -> etree._Element:
 def build_sii_issued_record(
     invoice: InvoiceDocument,
     comm_type: str = "A0",
+    clave_regimen: str = "01",
+    impuesto: str = "01",
 ) -> bytes:
     """Build a complete SII SOAP envelope for an issued invoice (FacturaExpedida).
 
     Args:
         invoice: Core InvoiceDocument.
         comm_type: TipoComunicacion: A0 (new), A1 (modification), A4 (removal).
+        clave_regimen: ClaveRegimenEspecialOTrascendencia (default "01" general).
+        impuesto: Impuesto code, "01" IVA, "02" IGIC, "03" IPSI (default "01").
 
     Returns:
         UTF-8 SOAP envelope bytes.
@@ -131,18 +240,16 @@ def build_sii_issued_record(
     suministro.append(safe_fromstring(etree.tostring(cab)))
 
     registro = etree.SubElement(suministro, f"{{{_SII_NS}}}RegistroLRFacturasEmitidas")
-    registro.append(etree.fromstring(
-        etree.tostring(_build_periodo(fiscal_year, invoice.date))
-    ))
-    registro.append(etree.fromstring(
-        etree.tostring(_build_id_factura_emitida(invoice, seller_nif))
-    ))
+    registro.append(etree.fromstring(etree.tostring(_build_periodo(fiscal_year, invoice.date))))
+    registro.append(
+        etree.fromstring(etree.tostring(_build_id_factura_emitida(invoice, seller_nif)))
+    )
 
     factura_exp = etree.SubElement(registro, f"{{{_SII_NS}}}FacturaExpedida")
     # TipoFactura from document_type (F1, F2, etc.) or default to F1
     tipo_factura = invoice.document_type if invoice.document_type else "F1"
     _sub(factura_exp, "TipoFactura", tipo_factura)
-    _sub(factura_exp, "ClaveRegimenEspecialOTrascendencia", "01")  # 01 = general
+    _sub(factura_exp, "ClaveRegimenEspecialOTrascendencia", clave_regimen)
     _sub(factura_exp, "ImporteTotal", fmt_amount(grand_total))
     _sub(factura_exp, "DescripcionOperacion", (invoice.note or "Prestación de servicios")[:500])
 
@@ -171,9 +278,7 @@ def build_sii_issued_record(
         _sub(detalle, "BaseImponible", fmt_amount(vat.taxable_base))
         _sub(detalle, "CuotaRepercutida", fmt_amount(vat.vat_amount))
 
-    return etree.tostring(
-        envelope, xml_declaration=True, encoding="UTF-8", pretty_print=True
-    )
+    return etree.tostring(envelope, xml_declaration=True, encoding="UTF-8", pretty_print=True)
 
 
 def build_sii_received_record(
@@ -199,9 +304,7 @@ def build_sii_received_record(
     suministro.append(safe_fromstring(etree.tostring(cab)))
 
     registro = etree.SubElement(suministro, f"{{{_SII_NS}}}RegistroLRFacturasRecibidas")
-    registro.append(etree.fromstring(
-        etree.tostring(_build_periodo(fiscal_year, invoice.date))
-    ))
+    registro.append(etree.fromstring(etree.tostring(_build_periodo(fiscal_year, invoice.date))))
 
     # For received invoices, the IDFactura references the supplier
     idf = etree.Element("IDFactura")
@@ -220,7 +323,9 @@ def build_sii_received_record(
     factura_rec = etree.SubElement(registro, f"{{{_SII_NS}}}FacturaRecibida")
     _sub(factura_rec, "TipoFactura", invoice.document_type or "F1")
     _sub(factura_rec, "ClaveRegimenEspecialOTrascendencia", "01")
-    _sub(factura_rec, "DescripcionOperacion", (invoice.note or "Compra de bienes / servicios")[:500])
+    _sub(
+        factura_rec, "DescripcionOperacion", (invoice.note or "Compra de bienes / servicios")[:500]
+    )
     _sub(factura_rec, "ImporteTotal", fmt_amount(grand_total))
     contraparte = etree.SubElement(factura_rec, f"{{{_SII_NS}}}Contraparte")
     _sub(contraparte, "NombreRazon", invoice.seller.display_name[:120])
@@ -245,9 +350,7 @@ def build_sii_received_record(
     # FechaRegContable: registration date (today = invoice date simplified here)
     _sub(factura_rec, "FechaRegContable", fmt_date_es(invoice.date))
 
-    return etree.tostring(
-        envelope, xml_declaration=True, encoding="UTF-8", pretty_print=True
-    )
+    return etree.tostring(envelope, xml_declaration=True, encoding="UTF-8", pretty_print=True)
 
 
 # ---------------------------------------------------------------------------
@@ -412,23 +515,33 @@ async def handle_es_build_sii_invoice_record(
             return err(f"Invalid communication_type: {comm_type_str!r}")
 
         invoice = parse_invoice(invoice_data)
+        clave_regimen: str = arguments.get("clave_regimen", "01")
 
         if record_type == SIIRecordType.issued:
-            xml_bytes = build_sii_issued_record(invoice, comm_type.value)
+            xml_bytes = build_sii_issued_record(
+                invoice,
+                comm_type.value,
+                clave_regimen=clave_regimen,
+            )
         else:
             xml_bytes = build_sii_received_record(invoice, comm_type.value)
 
         logger.info(
             "SII %s record built for %s / %s (comm_type=%s)",
-            record_type.value, invoice.seller.tax_id.identifier, invoice.number, comm_type.value,
+            record_type.value,
+            invoice.seller.tax_id.identifier,
+            invoice.number,
+            comm_type.value,
         )
 
-        return ok({
-            "xml": xml_bytes.decode("utf-8"),
-            "record_type": record_type.value,
-            "communication_type": comm_type.value,
-            "invoice_number": invoice.number,
-        })
+        return ok(
+            {
+                "xml": xml_bytes.decode("utf-8"),
+                "record_type": record_type.value,
+                "communication_type": comm_type.value,
+                "invoice_number": invoice.number,
+            }
+        )
 
     except EInvoicingError as exc:
         return err(str(exc))
@@ -468,18 +581,22 @@ async def handle_es_submit_sii_batch(
         gate = ConfirmationGate.get_default()
         if not gate.is_confirmed(confirmation_token):
             env_label = aeat_env()
-            return ok(gate.pending_response(
-                action="es__submit_sii_batch",
-                summary=(
-                    f"Submit {len(records)} SII {record_type_str} record(s) to AEAT "
-                    f"({env_label}, ejercicio {fiscal_year}). "
-                    "SII records are immediately reported to the Tax Agency."
-                ),
-                token=confirmation_token,
-            ))
+            return ok(
+                gate.pending_response(
+                    action="es__submit_sii_batch",
+                    summary=(
+                        f"Submit {len(records)} SII {record_type_str} record(s) to AEAT "
+                        f"({env_label}, ejercicio {fiscal_year}). "
+                        "SII records are immediately reported to the Tax Agency."
+                    ),
+                    token=confirmation_token,
+                )
+            )
 
         env = aeat_env()
-        endpoints = SII_ISSUED_ENDPOINTS if record_type == SIIRecordType.issued else SII_RECEIVED_ENDPOINTS
+        endpoints = (
+            SII_ISSUED_ENDPOINTS if record_type == SIIRecordType.issued else SII_RECEIVED_ENDPOINTS
+        )
         base_url = endpoints[env]
 
         use_signer = SignerClient.is_configured()
@@ -501,44 +618,56 @@ async def handle_es_submit_sii_batch(
                 cert_password=cert_password,
             )
 
-        # For simplicity, submit records one by one.
-        # [NEED: merge multiple RegistroLRFacturas into a single SuministroLR for true batch]
-        results = []
-        for i, xml_str in enumerate(records):
-            xml_bytes = xml_str.encode() if isinstance(xml_str, str) else xml_str
-            try:
-                if use_signer:
-                    resp = await signer.mtls_submit_files(  # type: ignore[possibly-undefined]
-                        base_url,
-                        [("xml", f"sii_{i}.xml", xml_bytes, "text/xml")],
-                    )
-                    results.append({
-                        "index": i,
-                        "status_code": resp["status_code"],
-                        "response": resp["body"][:500],
-                    })
-                else:
-                    response = await client._request(  # type: ignore[possibly-undefined]
-                        "POST", "",
-                        files={"xml": (f"sii_{i}.xml", xml_bytes, "text/xml")},
-                    )
-                    results.append({
-                        "index": i,
-                        "status_code": response.status_code,
-                        "response": response.text[:500],
-                    })
-            except Exception as exc:
-                results.append({"index": i, "error": str(exc)})
+        # ES-LC-1: merge all records into a single SuministroLR envelope
+        first_record = safe_fromstring(
+            records[0].encode() if isinstance(records[0], str) else records[0]
+        )
+        nif_elems = first_record.xpath(".//*[local-name()='NIF']")
+        seller_nif = nif_elems[0].text if nif_elems else ""
+        name_elems = first_record.xpath(".//*[local-name()='NombreRazon']")
+        seller_name = name_elems[0].text if name_elems else ""
+
+        merged_xml = _merge_sii_records(
+            records_xml=records,
+            seller_nif=seller_nif,
+            seller_name=seller_name,
+            comm_type="A0",
+            record_type=record_type,
+        )
+
+        try:
+            if use_signer:
+                resp = await signer.mtls_submit_files(  # type: ignore[possibly-undefined]
+                    base_url,
+                    [("xml", "sii_batch.xml", merged_xml, "text/xml")],
+                )
+                raw_body = resp.get("body", "")
+                status_code = resp["status_code"]
+            else:
+                response = await client._request(  # type: ignore[possibly-undefined]
+                    "POST",
+                    "",
+                    files={"xml": ("sii_batch.xml", merged_xml, "text/xml")},
+                )
+                raw_body = response.text
+                status_code = response.status_code
+
+            parsed = _parse_sii_response(raw_body)
+        except Exception as exc:
+            parsed = {"error": str(exc)}
+            status_code = 0
 
         gate.consume(confirmation_token)
-        return ok({
-            "environment": env,
-            "record_type": record_type.value,
-            "fiscal_year": fiscal_year,
-            "submitted": len(records),
-            "results": results,
-            "note": "Use es__parse_aeat_response to parse each response XML.",
-        })
+        return ok(
+            {
+                "environment": env,
+                "record_type": record_type.value,
+                "fiscal_year": fiscal_year,
+                "submitted": len(records),
+                "status_code": status_code,
+                "parsed_response": parsed,
+            }
+        )
 
     except Exception as exc:
         logger.exception("es__submit_sii_batch failed")
@@ -646,21 +775,22 @@ async def handle_es_query_sii_status(
         cert_path = aeat_settings.certificate_path
         if not cert_path:
             # Return the SOAP envelope without submitting if no certificate is configured
-            return ok({
-                "soap_envelope": soap_bytes.decode("utf-8"),
-                "note": (
-                    "AEAT_CERTIFICATE_PATH no configurado — SOAP envelope generado pero no enviado. "
-                    "Configure el certificado FNMT-RCM para enviar la consulta."
-                ),
-                "record_type": record_type.value,
-                "fiscal_year": fiscal_year,
-                "period": period,
-            })
+            return ok(
+                {
+                    "soap_envelope": soap_bytes.decode("utf-8"),
+                    "note": (
+                        "AEAT_CERTIFICATE_PATH no configurado — SOAP envelope generado pero no enviado. "
+                        "Configure el certificado FNMT-RCM para enviar la consulta."
+                    ),
+                    "record_type": record_type.value,
+                    "fiscal_year": fiscal_year,
+                    "period": period,
+                }
+            )
 
         env = aeat_env()
         endpoints = (
-            SII_ISSUED_ENDPOINTS if record_type == SIIRecordType.issued
-            else SII_RECEIVED_ENDPOINTS
+            SII_ISSUED_ENDPOINTS if record_type == SIIRecordType.issued else SII_RECEIVED_ENDPOINTS
         )
         cert_password = aeat_settings.certificate_password
         client = BaseEInvoicingClient(
@@ -692,17 +822,21 @@ async def handle_es_query_sii_status(
 
         logger.info(
             "SII consulta %s: ejercicio=%s periodo=%s status=%s",
-            record_type.value, fiscal_year, period,
+            record_type.value,
+            fiscal_year,
+            period,
             response.status_code,
         )
-        return ok({
-            "record_type": record_type.value,
-            "fiscal_year": fiscal_year,
-            "period": period,
-            "environment": env,
-            "status_code": response.status_code,
-            "parsed_response": parsed_status,
-        })
+        return ok(
+            {
+                "record_type": record_type.value,
+                "fiscal_year": fiscal_year,
+                "period": period,
+                "environment": env,
+                "status_code": response.status_code,
+                "parsed_response": parsed_status,
+            }
+        )
 
     except Exception as exc:
         logger.exception("es__query_sii_status failed")
@@ -744,12 +878,14 @@ async def handle_es_generate_sii_correction(
         else:
             xml_bytes = build_sii_received_record(target, comm_type.value)
 
-        return ok({
-            "xml": xml_bytes.decode("utf-8"),
-            "correction_type": comm_type.value,
-            "record_type": record_type.value,
-            "original_invoice_number": original.number,
-        })
+        return ok(
+            {
+                "xml": xml_bytes.decode("utf-8"),
+                "correction_type": comm_type.value,
+                "record_type": record_type.value,
+                "original_invoice_number": original.number,
+            }
+        )
 
     except EInvoicingError as exc:
         return err(str(exc))

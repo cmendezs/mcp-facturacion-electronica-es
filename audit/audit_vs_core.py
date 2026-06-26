@@ -49,10 +49,12 @@ from mcp_einvoicing_core.audit import (
 #   - SpanishInvoice currently extends InvoiceDocument — WRONG BASE for Factura-e pathway.
 #   - FaturaeInvoice(EN16931Invoice) must be scaffolded before this constant can be set True.
 #   - VeriFactu tools use InvoiceDocument directly (correct — VeriFactu is not EN 16931).
-# Set to None to skip the canonical tree check until FaturaeInvoice is created (Sprint 4).
-# [GAP id=ES-SC-9]
-_IS_EN16931_FAMILY: bool | None = None
-_PRIMARY_INVOICE_CLASS: tuple[str, str] | None = None
+# FaturaeInvoice(EN16931Invoice) scaffolded in v0.3.0 (ES-SC-9).
+_IS_EN16931_FAMILY: bool | None = True
+_PRIMARY_INVOICE_CLASS: tuple[str, str] | None = (
+    "mcp_facturacion_electronica_es.models.es",
+    "FaturaeInvoice",
+)
 
 _INTENTIONAL_OVERRIDES: dict[str, set[str]] = {
     "mcp_einvoicing_core.base_server": {
@@ -121,31 +123,31 @@ _PYPROJECT = Path(__file__).parent.parent / "pyproject.toml"
 
 _REQUIRED_TOOL_CATEGORIES: dict[str, str] = {
     # VERI*FACTU
-    "es__generate_verifactu_record":       "Generar registro VERI*FACTU con Huella SHA-256",
-    "es__validate_verifactu_record":       "Validar registro VERI*FACTU contra XSD HAC/1177/2024",
-    "es__submit_verifactu_to_aeat":        "Enviar registro VERI*FACTU firmado a AEAT (MTLS)",
-    "es__generate_qr_verifactu":           "Generar QR obligatorio VERI*FACTU (Art. 10 HAC/1177/2024)",
-    "es__cancel_verifactu_record":         "Generar registro de anulación VERI*FACTU",
+    "es__generate_verifactu_record": "Generar registro VERI*FACTU con Huella SHA-256",
+    "es__validate_verifactu_record": "Validar registro VERI*FACTU contra XSD HAC/1177/2024",
+    "es__submit_verifactu_to_aeat": "Enviar registro VERI*FACTU firmado a AEAT (MTLS)",
+    "es__generate_qr_verifactu": "Generar QR obligatorio VERI*FACTU (Art. 10 HAC/1177/2024)",
+    "es__cancel_verifactu_record": "Generar registro de anulación VERI*FACTU",
     # Facturae / FACe
-    "es__generate_facturae_xml":           "Generar XML Facturae 3.2.2 para envío B2G",
-    "es__sign_facturae_xades":             "Aplicar firma XAdES-EPES a documento Facturae XML",
-    "es__submit_to_face":                  "Enviar Facturae firmado a FACe via REST API v2",
-    "es__get_face_invoice_status":         "Consultar estado de factura en FACe",
-    "es__validate_facturae_schema":        "Validar XML Facturae contra XSD oficial 3.2.2",
+    "es__generate_facturae_xml": "Generar XML Facturae 3.2.2 para envío B2G",
+    "es__sign_facturae_xades": "Aplicar firma XAdES-EPES a documento Facturae XML",
+    "es__submit_to_face": "Enviar Facturae firmado a FACe via REST API v2",
+    "es__get_face_invoice_status": "Consultar estado de factura en FACe",
+    "es__validate_facturae_schema": "Validar XML Facturae contra XSD oficial 3.2.2",
     # SII
-    "es__build_sii_invoice_record":        "Construir registro XML AEAT SII (FacturaExpedida/Recibida)",
-    "es__submit_sii_batch":                "Enviar lote de facturas SII al endpoint SOAP AEAT",
-    "es__query_sii_status":                "Consultar estado de lote SII enviado",
-    "es__generate_sii_correction":         "Generar registro de modificación (A1) o baja (A4) SII",
+    "es__build_sii_invoice_record": "Construir registro XML AEAT SII (FacturaExpedida/Recibida)",
+    "es__submit_sii_batch": "Enviar lote de facturas SII al endpoint SOAP AEAT",
+    "es__query_sii_status": "Consultar estado de lote SII enviado",
+    "es__generate_sii_correction": "Generar registro de modificación (A1) o baja (A4) SII",
     # TicketBAI is explicitly out of scope for this package (confirmed 2026-05-31).
     # es__generate_ticketbai_xml, es__submit_ticketbai, es__validate_ticketbai_schema — removed.
     # Crea y Crece / B2B
-    "es__generate_b2b_einvoice_es":        "Generar factura B2B EN 16931 (UBL 2.1 o Facturae 3.2.2)",
+    "es__generate_b2b_einvoice_es": "Generar factura B2B EN 16931 (UBL 2.1 o Facturae 3.2.2)",
     "es__check_b2b_mandate_applicability": "Determinar régimen aplicable según RD 254/2025",
     # Utilities
-    "es__detect_regional_regime":          "Detectar régimen de facturación por código de provincia INE",
-    "es__get_compliance_status":           "Obtener plazos de mandato vigentes para perfil de empresa",
-    "es__parse_aeat_response":             "Analizar y normalizar respuesta XML AEAT a JSON estructurado",
+    "es__detect_regional_regime": "Detectar régimen de facturación por código de provincia INE",
+    "es__get_compliance_status": "Obtener plazos de mandato vigentes para perfil de empresa",
+    "es__parse_aeat_response": "Analizar y normalizar respuesta XML AEAT a JSON estructurado",
 }
 
 _TOOL_MODULE_ATTRS: list[tuple[str, str]] = [
@@ -154,21 +156,21 @@ _TOOL_MODULE_ATTRS: list[tuple[str, str]] = [
     ("mcp_facturacion_electronica_es.tools.verifactu", "TOOL_ES_SUBMIT_VERIFACTU_TO_AEAT"),
     ("mcp_facturacion_electronica_es.tools.verifactu", "TOOL_ES_GENERATE_QR_VERIFACTU"),
     ("mcp_facturacion_electronica_es.tools.verifactu", "TOOL_ES_CANCEL_VERIFACTU_RECORD"),
-    ("mcp_facturacion_electronica_es.tools.facturae",  "TOOL_ES_GENERATE_FACTURAE_XML"),
-    ("mcp_facturacion_electronica_es.tools.facturae",  "TOOL_ES_SIGN_FACTURAE_XADES"),
-    ("mcp_facturacion_electronica_es.tools.facturae",  "TOOL_ES_SUBMIT_TO_FACE"),
-    ("mcp_facturacion_electronica_es.tools.facturae",  "TOOL_ES_GET_FACE_INVOICE_STATUS"),
-    ("mcp_facturacion_electronica_es.tools.facturae",  "TOOL_ES_VALIDATE_FACTURAE_SCHEMA"),
-    ("mcp_facturacion_electronica_es.tools.sii",       "TOOL_ES_BUILD_SII_INVOICE_RECORD"),
-    ("mcp_facturacion_electronica_es.tools.sii",       "TOOL_ES_SUBMIT_SII_BATCH"),
-    ("mcp_facturacion_electronica_es.tools.sii",       "TOOL_ES_QUERY_SII_STATUS"),
-    ("mcp_facturacion_electronica_es.tools.sii",       "TOOL_ES_GENERATE_SII_CORRECTION"),
+    ("mcp_facturacion_electronica_es.tools.facturae", "TOOL_ES_GENERATE_FACTURAE_XML"),
+    ("mcp_facturacion_electronica_es.tools.facturae", "TOOL_ES_SIGN_FACTURAE_XADES"),
+    ("mcp_facturacion_electronica_es.tools.facturae", "TOOL_ES_SUBMIT_TO_FACE"),
+    ("mcp_facturacion_electronica_es.tools.facturae", "TOOL_ES_GET_FACE_INVOICE_STATUS"),
+    ("mcp_facturacion_electronica_es.tools.facturae", "TOOL_ES_VALIDATE_FACTURAE_SCHEMA"),
+    ("mcp_facturacion_electronica_es.tools.sii", "TOOL_ES_BUILD_SII_INVOICE_RECORD"),
+    ("mcp_facturacion_electronica_es.tools.sii", "TOOL_ES_SUBMIT_SII_BATCH"),
+    ("mcp_facturacion_electronica_es.tools.sii", "TOOL_ES_QUERY_SII_STATUS"),
+    ("mcp_facturacion_electronica_es.tools.sii", "TOOL_ES_GENERATE_SII_CORRECTION"),
     # TicketBAI tools removed — out of scope (confirmed 2026-05-31)
-    ("mcp_facturacion_electronica_es.tools.b2b",       "TOOL_ES_GENERATE_B2B_EINVOICE_ES"),
-    ("mcp_facturacion_electronica_es.tools.b2b",       "TOOL_ES_CHECK_B2B_MANDATE_APPLICABILITY"),
-    ("mcp_facturacion_electronica_es.tools.utils",     "TOOL_ES_DETECT_REGIONAL_REGIME"),
-    ("mcp_facturacion_electronica_es.tools.utils",     "TOOL_ES_GET_COMPLIANCE_STATUS"),
-    ("mcp_facturacion_electronica_es.tools.utils",     "TOOL_ES_PARSE_AEAT_RESPONSE"),
+    ("mcp_facturacion_electronica_es.tools.b2b", "TOOL_ES_GENERATE_B2B_EINVOICE_ES"),
+    ("mcp_facturacion_electronica_es.tools.b2b", "TOOL_ES_CHECK_B2B_MANDATE_APPLICABILITY"),
+    ("mcp_facturacion_electronica_es.tools.utils", "TOOL_ES_DETECT_REGIONAL_REGIME"),
+    ("mcp_facturacion_electronica_es.tools.utils", "TOOL_ES_GET_COMPLIANCE_STATUS"),
+    ("mcp_facturacion_electronica_es.tools.utils", "TOOL_ES_PARSE_AEAT_RESPONSE"),
 ]
 
 
@@ -191,25 +193,33 @@ def run_check_2() -> CheckResult:
     for tool_name, description in _REQUIRED_TOOL_CATEGORIES.items():
         tag = "[OK]" if tool_name in registered else "[MISSING_TOOL]"
         sev = SEVERITY_OK if tool_name in registered else SEVERITY_BLOCKING
-        result.findings.append(CheckFinding(
-            check_id="CHECK_2", tag=tag, severity=sev,
-            symbol=tool_name,
-            message=(
-                f"Tool '{tool_name}' is registered. ({description})"
-                if tool_name in registered
-                else (
-                    f"Required tool '{tool_name}' ({description}) is not registered "
-                    "in the MCP server. Add it to server.py _ALL_TOOLS and _TOOL_HANDLERS."
-                )
-            ),
-        ))
+        result.findings.append(
+            CheckFinding(
+                check_id="CHECK_2",
+                tag=tag,
+                severity=sev,
+                symbol=tool_name,
+                message=(
+                    f"Tool '{tool_name}' is registered. ({description})"
+                    if tool_name in registered
+                    else (
+                        f"Required tool '{tool_name}' ({description}) is not registered "
+                        "in the MCP server. Add it to server.py _ALL_TOOLS and _TOOL_HANDLERS."
+                    )
+                ),
+            )
+        )
 
     for tool_name in sorted(registered - set(_REQUIRED_TOOL_CATEGORIES)):
-        result.findings.append(CheckFinding(
-            check_id="CHECK_2", tag="[EXTRA]", severity=SEVERITY_OK,
-            symbol=tool_name,
-            message=f"Tool '{tool_name}' is registered but not in the required tool spec.",
-        ))
+        result.findings.append(
+            CheckFinding(
+                check_id="CHECK_2",
+                tag="[EXTRA]",
+                severity=SEVERITY_OK,
+                symbol=tool_name,
+                message=f"Tool '{tool_name}' is registered but not in the required tool spec.",
+            )
+        )
 
     return result
 
@@ -221,17 +231,17 @@ def run_check_2() -> CheckResult:
 # EN 16931 field names that SpanishInvoice must expose (as Pydantic fields or
 # mapped properties). Descriptions are in Spanish for locale consistency.
 _CORE_MANDATORY_FIELDS: dict[str, str] = {
-    "invoice_number":       "BT-1  — Número de factura",
-    "invoice_date":         "BT-2  — Fecha de expedición",
-    "invoice_type_code":    "BT-3  — Tipo de factura (F1, F2, R1…)",
-    "currency_code":        "BT-5  — Moneda (EUR)",
-    "seller":               "BG-4  — Emisor / Vendedor",
-    "buyer":                "BG-7  — Receptor / Comprador",
-    "tax_lines":            "BG-23 — Desglose de IVA",
+    "invoice_number": "BT-1  — Número de factura",
+    "invoice_date": "BT-2  — Fecha de expedición",
+    "invoice_type_code": "BT-3  — Tipo de factura (F1, F2, R1…)",
+    "currency_code": "BT-5  — Moneda (EUR)",
+    "seller": "BG-4  — Emisor / Vendedor",
+    "buyer": "BG-7  — Receptor / Comprador",
+    "tax_lines": "BG-23 — Desglose de IVA",
     "tax_exclusive_amount": "BT-109 — Base imponible total",
     "tax_inclusive_amount": "BT-112 — Total con IVA",
-    "tax_total":            "BT-110 — Cuota total de IVA",
-    "amount_due":           "BT-115 — Importe a pagar",
+    "tax_total": "BT-110 — Cuota total de IVA",
+    "amount_due": "BT-115 — Importe a pagar",
 }
 
 _DEPRECATED_CORE_FIELDS: set[str] = set()
@@ -249,11 +259,15 @@ def run_check_3() -> CheckResult:
 
     invoice_cls = getattr(mod, "SpanishInvoice", None)
     if invoice_cls is None:
-        result.findings.append(CheckFinding(
-            check_id="CHECK_3", tag="[MISSING]", severity=SEVERITY_BLOCKING,
-            symbol="SpanishInvoice",
-            message="SpanishInvoice class not found in mcp_facturacion_electronica_es.models.es.",
-        ))
+        result.findings.append(
+            CheckFinding(
+                check_id="CHECK_3",
+                tag="[MISSING]",
+                severity=SEVERITY_BLOCKING,
+                symbol="SpanishInvoice",
+                message="SpanishInvoice class not found in mcp_facturacion_electronica_es.models.es.",
+            )
+        )
         return result
 
     # SpanishInvoice may expose EN 16931 names as properties mapping to internal fields.
@@ -266,28 +280,34 @@ def run_check_3() -> CheckResult:
 
     for field_name, description in _CORE_MANDATORY_FIELDS.items():
         ok = _has_field(invoice_cls, field_name)
-        result.findings.append(CheckFinding(
-            check_id="CHECK_3",
-            tag="[OK]" if ok else "[FIELD_MISSING]",
-            severity=SEVERITY_OK if ok else SEVERITY_BLOCKING,
-            symbol=f"SpanishInvoice.{field_name}",
-            message=(
-                f"Mandatory field present (field or property). {description}"
-                if ok
-                else f"Mandatory field '{field_name}' ({description}) is absent from SpanishInvoice."
-            ),
-        ))
+        result.findings.append(
+            CheckFinding(
+                check_id="CHECK_3",
+                tag="[OK]" if ok else "[FIELD_MISSING]",
+                severity=SEVERITY_OK if ok else SEVERITY_BLOCKING,
+                symbol=f"SpanishInvoice.{field_name}",
+                message=(
+                    f"Mandatory field present (field or property). {description}"
+                    if ok
+                    else f"Mandatory field '{field_name}' ({description}) is absent from SpanishInvoice."
+                ),
+            )
+        )
 
     for dep_field in _DEPRECATED_CORE_FIELDS:
         if dep_field in model_fields:
-            result.findings.append(CheckFinding(
-                check_id="CHECK_3", tag="[DEPRECATED_IN_USE]", severity=SEVERITY_WARNING,
-                symbol=f"SpanishInvoice.{dep_field}",
-                message=(
-                    f"Field '{dep_field}' is marked deprecated in mcp-einvoicing-core "
-                    "but is still present in SpanishInvoice."
-                ),
-            ))
+            result.findings.append(
+                CheckFinding(
+                    check_id="CHECK_3",
+                    tag="[DEPRECATED_IN_USE]",
+                    severity=SEVERITY_WARNING,
+                    symbol=f"SpanishInvoice.{dep_field}",
+                    message=(
+                        f"Field '{dep_field}' is marked deprecated in mcp-einvoicing-core "
+                        "but is still present in SpanishInvoice."
+                    ),
+                )
+            )
 
     return result
 
@@ -296,6 +316,7 @@ def run_check_3() -> CheckResult:
 # CHECK 5 — ES-specific structural checks
 # ---------------------------------------------------------------------------
 
+
 def run_check_5() -> CheckResult:
     """CHECK 5 — ES-specific structural and completeness checks."""
     result = CheckResult(check_id="CHECK_5", name="ES-specific structural checks")
@@ -303,24 +324,32 @@ def run_check_5() -> CheckResult:
     # 5a: server module exports _ALL_TOOLS, _TOOL_HANDLERS, and main
     server_mod, err = _try_import("mcp_facturacion_electronica_es.server")
     if server_mod is None:
-        result.findings.append(CheckFinding(
-            check_id="CHECK_5", tag="[MISSING]", severity=SEVERITY_BLOCKING,
-            symbol="mcp_facturacion_electronica_es.server",
-            message=f"Could not import server module: {err}",
-        ))
+        result.findings.append(
+            CheckFinding(
+                check_id="CHECK_5",
+                tag="[MISSING]",
+                severity=SEVERITY_BLOCKING,
+                symbol="mcp_facturacion_electronica_es.server",
+                message=f"Could not import server module: {err}",
+            )
+        )
     else:
         for attr in ("_ALL_TOOLS", "_TOOL_HANDLERS", "main"):
             tag = "[OK]" if hasattr(server_mod, attr) else "[MISSING]"
             sev = SEVERITY_OK if hasattr(server_mod, attr) else SEVERITY_BLOCKING
-            result.findings.append(CheckFinding(
-                check_id="CHECK_5", tag=tag, severity=sev,
-                symbol=f"server.{attr}",
-                message=(
-                    f"server.{attr} is present."
-                    if hasattr(server_mod, attr)
-                    else f"server.{attr} is missing — required for MCP server operation."
-                ),
-            ))
+            result.findings.append(
+                CheckFinding(
+                    check_id="CHECK_5",
+                    tag=tag,
+                    severity=sev,
+                    symbol=f"server.{attr}",
+                    message=(
+                        f"server.{attr} is present."
+                        if hasattr(server_mod, attr)
+                        else f"server.{attr} is missing — required for MCP server operation."
+                    ),
+                )
+            )
 
         # 5b: _ALL_TOOLS and _TOOL_HANDLERS in sync
         all_tools = getattr(server_mod, "_ALL_TOOLS", [])
@@ -329,23 +358,37 @@ def run_check_5() -> CheckResult:
         tool_names_handlers = set(all_handlers.keys())
 
         for name in sorted(tool_names_list - tool_names_handlers):
-            result.findings.append(CheckFinding(
-                check_id="CHECK_5", tag="[MISSING_HANDLER]", severity=SEVERITY_BLOCKING,
-                symbol=f"_TOOL_HANDLERS[{name!r}]",
-                message=f"Tool '{name}' is in _ALL_TOOLS but has no handler in _TOOL_HANDLERS.",
-            ))
+            result.findings.append(
+                CheckFinding(
+                    check_id="CHECK_5",
+                    tag="[MISSING_HANDLER]",
+                    severity=SEVERITY_BLOCKING,
+                    symbol=f"_TOOL_HANDLERS[{name!r}]",
+                    message=f"Tool '{name}' is in _ALL_TOOLS but has no handler in _TOOL_HANDLERS.",
+                )
+            )
         for name in sorted(tool_names_handlers - tool_names_list):
-            result.findings.append(CheckFinding(
-                check_id="CHECK_5", tag="[MISSING_REGISTRATION]", severity=SEVERITY_WARNING,
-                symbol=f"_ALL_TOOLS[{name!r}]",
-                message=f"Handler '{name}' is in _TOOL_HANDLERS but not listed in _ALL_TOOLS.",
-            ))
-        if not (tool_names_list - tool_names_handlers) and not (tool_names_handlers - tool_names_list):
-            result.findings.append(CheckFinding(
-                check_id="CHECK_5", tag="[OK]", severity=SEVERITY_OK,
-                symbol="_ALL_TOOLS ↔ _TOOL_HANDLERS",
-                message=f"All {len(all_tools)} tools have matching handlers.",
-            ))
+            result.findings.append(
+                CheckFinding(
+                    check_id="CHECK_5",
+                    tag="[MISSING_REGISTRATION]",
+                    severity=SEVERITY_WARNING,
+                    symbol=f"_ALL_TOOLS[{name!r}]",
+                    message=f"Handler '{name}' is in _TOOL_HANDLERS but not listed in _ALL_TOOLS.",
+                )
+            )
+        if not (tool_names_list - tool_names_handlers) and not (
+            tool_names_handlers - tool_names_list
+        ):
+            result.findings.append(
+                CheckFinding(
+                    check_id="CHECK_5",
+                    tag="[OK]",
+                    severity=SEVERITY_OK,
+                    symbol="_ALL_TOOLS ↔ _TOOL_HANDLERS",
+                    message=f"All {len(all_tools)} tools have matching handlers.",
+                )
+            )
 
     # 5c: SpanishRegime enum covers required AEAT-scope values
     # TicketBAI and NaTicket are intentionally absent — out of scope (confirmed 2026-05-31)
@@ -358,50 +401,70 @@ def run_check_5() -> CheckResult:
             for r in sorted(required_regimes):
                 tag = "[OK]" if r in actual_regimes else "[MISSING_REGIME]"
                 sev = SEVERITY_OK if r in actual_regimes else SEVERITY_BLOCKING
-                result.findings.append(CheckFinding(
-                    check_id="CHECK_5", tag=tag, severity=sev,
-                    symbol=f"SpanishRegime.{r}",
-                    message=(
-                        "Regime value defined."
-                        if r in actual_regimes
-                        else f"Required regime '{r}' is not defined in SpanishRegime enum."
-                    ),
-                ))
+                result.findings.append(
+                    CheckFinding(
+                        check_id="CHECK_5",
+                        tag=tag,
+                        severity=sev,
+                        symbol=f"SpanishRegime.{r}",
+                        message=(
+                            "Regime value defined."
+                            if r in actual_regimes
+                            else f"Required regime '{r}' is not defined in SpanishRegime enum."
+                        ),
+                    )
+                )
             # TICKETBAI and NATICKET must NOT be present (out of scope)
             for r in ("TICKETBAI", "NATICKET"):
                 if r in actual_regimes:
-                    result.findings.append(CheckFinding(
-                        check_id="CHECK_5", tag="[OUT_OF_SCOPE_PRESENT]", severity=SEVERITY_BLOCKING,
-                        symbol=f"SpanishRegime.{r}",
-                        message=(
-                            f"SpanishRegime.{r} must be removed — "
-                            "TicketBAI/NaTicket are out of scope for this package (confirmed 2026-05-31)."
-                        ),
-                    ))
+                    result.findings.append(
+                        CheckFinding(
+                            check_id="CHECK_5",
+                            tag="[OUT_OF_SCOPE_PRESENT]",
+                            severity=SEVERITY_BLOCKING,
+                            symbol=f"SpanishRegime.{r}",
+                            message=(
+                                f"SpanishRegime.{r} must be removed — "
+                                "TicketBAI/NaTicket are out of scope for this package (confirmed 2026-05-31)."
+                            ),
+                        )
+                    )
         else:
-            result.findings.append(CheckFinding(
-                check_id="CHECK_5", tag="[MISSING]", severity=SEVERITY_BLOCKING,
-                symbol="SpanishRegime",
-                message="SpanishRegime enum not found in mcp_facturacion_electronica_es.models.es.",
-            ))
+            result.findings.append(
+                CheckFinding(
+                    check_id="CHECK_5",
+                    tag="[MISSING]",
+                    severity=SEVERITY_BLOCKING,
+                    symbol="SpanishRegime",
+                    message="SpanishRegime enum not found in mcp_facturacion_electronica_es.models.es.",
+                )
+            )
 
         # 5d: TicketBAIProvince must NOT be present (TicketBAI is out of scope)
         province_cls = getattr(models_mod, "TicketBAIProvince", None)
         if province_cls:
-            result.findings.append(CheckFinding(
-                check_id="CHECK_5", tag="[OUT_OF_SCOPE_PRESENT]", severity=SEVERITY_BLOCKING,
-                symbol="TicketBAIProvince",
-                message=(
-                    "TicketBAIProvince must be removed from models.es — "
-                    "TicketBAI is out of scope for this package (confirmed 2026-05-31)."
-                ),
-            ))
+            result.findings.append(
+                CheckFinding(
+                    check_id="CHECK_5",
+                    tag="[OUT_OF_SCOPE_PRESENT]",
+                    severity=SEVERITY_BLOCKING,
+                    symbol="TicketBAIProvince",
+                    message=(
+                        "TicketBAIProvince must be removed from models.es — "
+                        "TicketBAI is out of scope for this package (confirmed 2026-05-31)."
+                    ),
+                )
+            )
         else:
-            result.findings.append(CheckFinding(
-                check_id="CHECK_5", tag="[OK]", severity=SEVERITY_OK,
-                symbol="TicketBAIProvince",
-                message="TicketBAIProvince correctly absent (TicketBAI is out of scope).",
-            ))
+            result.findings.append(
+                CheckFinding(
+                    check_id="CHECK_5",
+                    tag="[OK]",
+                    severity=SEVERITY_OK,
+                    symbol="TicketBAIProvince",
+                    message="TicketBAIProvince correctly absent (TicketBAI is out of scope).",
+                )
+            )
 
         # 5e: VerifactuInvoiceType covers required type codes
         invoice_type_cls = getattr(models_mod, "VerifactuInvoiceType", None)
@@ -411,37 +474,53 @@ def run_check_5() -> CheckResult:
             missing_types = required_types - actual_types
             if missing_types:
                 for t in sorted(missing_types):
-                    result.findings.append(CheckFinding(
-                        check_id="CHECK_5", tag="[MISSING_TYPE]", severity=SEVERITY_BLOCKING,
-                        symbol=f"VerifactuInvoiceType.{t}",
-                        message=f"Required VERI*FACTU invoice type '{t}' is not defined.",
-                    ))
+                    result.findings.append(
+                        CheckFinding(
+                            check_id="CHECK_5",
+                            tag="[MISSING_TYPE]",
+                            severity=SEVERITY_BLOCKING,
+                            symbol=f"VerifactuInvoiceType.{t}",
+                            message=f"Required VERI*FACTU invoice type '{t}' is not defined.",
+                        )
+                    )
             else:
-                result.findings.append(CheckFinding(
-                    check_id="CHECK_5", tag="[OK]", severity=SEVERITY_OK,
-                    symbol="VerifactuInvoiceType",
-                    message=f"All {len(required_types)} required invoice type codes defined.",
-                ))
+                result.findings.append(
+                    CheckFinding(
+                        check_id="CHECK_5",
+                        tag="[OK]",
+                        severity=SEVERITY_OK,
+                        symbol="VerifactuInvoiceType",
+                        message=f"All {len(required_types)} required invoice type codes defined.",
+                    )
+                )
 
     # 5f: specs/ directory for normative XSD files
     specs_dir = Path(__file__).parent.parent / "specs"
     if specs_dir.exists():
         spec_files = [f for f in specs_dir.iterdir() if not f.name.startswith(".")]
-        result.findings.append(CheckFinding(
-            check_id="CHECK_5", tag="[OK]", severity=SEVERITY_OK,
-            symbol="specs/",
-            message=f"specs/ directory found with {len(spec_files)} reference file(s).",
-        ))
+        result.findings.append(
+            CheckFinding(
+                check_id="CHECK_5",
+                tag="[OK]",
+                severity=SEVERITY_OK,
+                symbol="specs/",
+                message=f"specs/ directory found with {len(spec_files)} reference file(s).",
+            )
+        )
     else:
-        result.findings.append(CheckFinding(
-            check_id="CHECK_5", tag="[MISSING_SPECS]", severity=SEVERITY_WARNING,
-            symbol="specs/",
-            message=(
-                "specs/ directory not found. Drop official XSD files "
-                "(HAC/1177/2024, Facturae 3.2.2, SII schemas) into specs/ "
-                "to enable schema-based validation."
-            ),
-        ))
+        result.findings.append(
+            CheckFinding(
+                check_id="CHECK_5",
+                tag="[MISSING_SPECS]",
+                severity=SEVERITY_WARNING,
+                symbol="specs/",
+                message=(
+                    "specs/ directory not found. Drop official XSD files "
+                    "(HAC/1177/2024, Facturae 3.2.2, SII schemas) into specs/ "
+                    "to enable schema-based validation."
+                ),
+            )
+        )
 
     return result
 
@@ -455,33 +534,74 @@ def run_check_5() -> CheckResult:
 # ---------------------------------------------------------------------------
 
 _CORE_CAPABILITIES: list[tuple[str, str, list[str]]] = [
-    ("cii_ubl_conversion", "mcp_einvoicing_core.convert", [
-        "convert_wire_format",
-    ]),
-    ("peppol_participant_lookup", "mcp_einvoicing_core.peppol", [
-        "PeppolSMPClient",
-    ]),
-    ("en16931_cii_parsing", "mcp_einvoicing_core.wire_formats", [
-        "EN16931CIIParser", "EN16931CIISerializer",
-    ]),
-    ("en16931_ubl_parsing", "mcp_einvoicing_core.wire_formats", [
-        "EN16931UBLParser", "EN16931UBLSerializer",
-    ]),
-    ("schematron_validation", "mcp_einvoicing_core.schematron", [
-        "SchematronValidator",
-    ]),
-    ("xades_xmldsig_signing", "mcp_einvoicing_core.digital_signature", [
-        "XAdESEPESSigner", "XMLDSigSigner",
-    ]),
-    ("http_client", "mcp_einvoicing_core.http_client", [
-        "BaseEInvoicingClient",
-    ]),
-    ("routing_identifier_validation", "mcp_einvoicing_core.routing", [
-        "RoutingIdentifier",
-    ]),
-    ("peppol_as4_transport", "mcp_einvoicing_core.peppol.transport", [
-        "AS4MessageEnvelope", "AS4TransportClient", "PeppolTransmitter",
-    ]),
+    (
+        "cii_ubl_conversion",
+        "mcp_einvoicing_core.convert",
+        [
+            "convert_wire_format",
+        ],
+    ),
+    (
+        "peppol_participant_lookup",
+        "mcp_einvoicing_core.peppol",
+        [
+            "PeppolSMPClient",
+        ],
+    ),
+    (
+        "en16931_cii_parsing",
+        "mcp_einvoicing_core.wire_formats",
+        [
+            "EN16931CIIParser",
+            "EN16931CIISerializer",
+        ],
+    ),
+    (
+        "en16931_ubl_parsing",
+        "mcp_einvoicing_core.wire_formats",
+        [
+            "EN16931UBLParser",
+            "EN16931UBLSerializer",
+        ],
+    ),
+    (
+        "schematron_validation",
+        "mcp_einvoicing_core.schematron",
+        [
+            "SchematronValidator",
+        ],
+    ),
+    (
+        "xades_xmldsig_signing",
+        "mcp_einvoicing_core.digital_signature",
+        [
+            "XAdESEPESSigner",
+            "XMLDSigSigner",
+        ],
+    ),
+    (
+        "http_client",
+        "mcp_einvoicing_core.http_client",
+        [
+            "BaseEInvoicingClient",
+        ],
+    ),
+    (
+        "routing_identifier_validation",
+        "mcp_einvoicing_core.routing",
+        [
+            "RoutingIdentifier",
+        ],
+    ),
+    (
+        "peppol_as4_transport",
+        "mcp_einvoicing_core.peppol.transport",
+        [
+            "AS4MessageEnvelope",
+            "AS4TransportClient",
+            "PeppolTransmitter",
+        ],
+    ),
 ]
 
 _INTENTIONAL_PARALLEL_IMPLEMENTATIONS: dict[tuple[str, str], str] = {}
@@ -495,11 +615,15 @@ def run_check_6() -> CheckResult:
 
     pkg_root = Path(__file__).parent.parent / "src" / "mcp_facturacion_electronica_es"
     if not pkg_root.is_dir():
-        result.findings.append(CheckFinding(
-            check_id="CHECK_6", tag="[SKIP]", severity=SEVERITY_OK,
-            symbol="mcp_facturacion_electronica_es",
-            message="Package source directory not found; skipping parallel-implementation scan.",
-        ))
+        result.findings.append(
+            CheckFinding(
+                check_id="CHECK_6",
+                tag="[SKIP]",
+                severity=SEVERITY_OK,
+                symbol="mcp_facturacion_electronica_es",
+                message="Package source directory not found; skipping parallel-implementation scan.",
+            )
+        )
         return result
 
     defined_names: dict[str, str] = {}
@@ -520,35 +644,47 @@ def run_check_6() -> CheckResult:
 
             override_key = (cap_tag, symbol)
             if override_key in _INTENTIONAL_PARALLEL_IMPLEMENTATIONS:
-                result.findings.append(CheckFinding(
-                    check_id="CHECK_6", tag="[OVERRIDE]", severity=SEVERITY_OK,
-                    symbol=symbol,
-                    message=(
-                        f"Parallel implementation of {symbol} ({cap_tag}) in "
-                        f"{defined_names[symbol]} is intentional: "
-                        f"{_INTENTIONAL_PARALLEL_IMPLEMENTATIONS[override_key]}"
-                    ),
-                ))
+                result.findings.append(
+                    CheckFinding(
+                        check_id="CHECK_6",
+                        tag="[OVERRIDE]",
+                        severity=SEVERITY_OK,
+                        symbol=symbol,
+                        message=(
+                            f"Parallel implementation of {symbol} ({cap_tag}) in "
+                            f"{defined_names[symbol]} is intentional: "
+                            f"{_INTENTIONAL_PARALLEL_IMPLEMENTATIONS[override_key]}"
+                        ),
+                    )
+                )
                 continue
 
             found_any = True
-            result.findings.append(CheckFinding(
-                check_id="CHECK_6", tag="[PARALLEL]", severity=SEVERITY_WARNING,
-                symbol=symbol,
-                message=(
-                    f"Country package defines {symbol!r} in {defined_names[symbol]}, "
-                    f"which mirrors core capability {cap_tag!r} from {core_module}. "
-                    "Delegate to the core symbol or register in "
-                    "_INTENTIONAL_PARALLEL_IMPLEMENTATIONS with a justification."
-                ),
-            ))
+            result.findings.append(
+                CheckFinding(
+                    check_id="CHECK_6",
+                    tag="[PARALLEL]",
+                    severity=SEVERITY_WARNING,
+                    symbol=symbol,
+                    message=(
+                        f"Country package defines {symbol!r} in {defined_names[symbol]}, "
+                        f"which mirrors core capability {cap_tag!r} from {core_module}. "
+                        "Delegate to the core symbol or register in "
+                        "_INTENTIONAL_PARALLEL_IMPLEMENTATIONS with a justification."
+                    ),
+                )
+            )
 
     if not found_any and not result.findings:
-        result.findings.append(CheckFinding(
-            check_id="CHECK_6", tag="[OK]", severity=SEVERITY_OK,
-            symbol="*",
-            message="No parallel implementations of core capabilities detected.",
-        ))
+        result.findings.append(
+            CheckFinding(
+                check_id="CHECK_6",
+                tag="[OK]",
+                severity=SEVERITY_OK,
+                symbol="*",
+                message="No parallel implementations of core capabilities detected.",
+            )
+        )
 
     return result
 
@@ -557,19 +693,23 @@ def run_audit() -> AuditReport:
     """Execute all checks and return the aggregated AuditReport. No side effects."""
     report = make_report("mcp-facturacion-electronica-es", _PYPROJECT)
 
-    report.checks.append(run_check_core_coverage(
-        package_name="mcp-facturacion-electronica-es",
-        package_modules=_ES_MODULES,
-        intentional_overrides=_INTENTIONAL_OVERRIDES,
-        is_en16931_family=_IS_EN16931_FAMILY,
-        primary_invoice_class=_PRIMARY_INVOICE_CLASS,
-    ))
+    report.checks.append(
+        run_check_core_coverage(
+            package_name="mcp-facturacion-electronica-es",
+            package_modules=_ES_MODULES,
+            intentional_overrides=_INTENTIONAL_OVERRIDES,
+            is_en16931_family=_IS_EN16931_FAMILY,
+            primary_invoice_class=_PRIMARY_INVOICE_CLASS,
+        )
+    )
     report.checks.append(run_check_2())
     report.checks.append(run_check_3())
-    report.checks.append(run_check_version_compatibility(
-        package_name="mcp-facturacion-electronica-es",
-        pyproject_path=_PYPROJECT,
-    ))
+    report.checks.append(
+        run_check_version_compatibility(
+            package_name="mcp-facturacion-electronica-es",
+            pyproject_path=_PYPROJECT,
+        )
+    )
     report.checks.append(run_check_5())
     report.checks.append(run_check_6())
 

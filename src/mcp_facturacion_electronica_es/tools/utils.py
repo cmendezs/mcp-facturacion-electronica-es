@@ -71,8 +71,7 @@ _MANDATE_DATES: dict[str, dict[str, str]] = {
         "system": "Facturae / FACe",
         "deadline": "already_mandatory",
         "description": (
-            "Ya obligatorio para todos los proveedores del sector público "
-            "desde 2015 (Ley 25/2013)."
+            "Ya obligatorio para todos los proveedores del sector público desde 2015 (Ley 25/2013)."
         ),
     },
     "TICKETBAI": {
@@ -305,46 +304,56 @@ async def handle_es_get_compliance_status(
         applicable_systems: list[dict[str, Any]] = []
 
         # Facturae/FACe always applies for B2G
-        applicable_systems.append({
-            "system": "Facturae / FACe",
-            "scope": "B2G (facturas al sector público)",
-            **_MANDATE_DATES["FACTURAE_FACE"],
-        })
+        applicable_systems.append(
+            {
+                "system": "Facturae / FACe",
+                "scope": "B2G (facturas al sector público)",
+                **_MANDATE_DATES["FACTURAE_FACE"],
+            }
+        )
 
         # Crea y Crece B2B (pending decree)
-        applicable_systems.append({
-            "system": "Crea y Crece B2B",
-            "scope": "B2B (todas las empresas)",
-            **_MANDATE_DATES["B2B_CREA_Y_CRECE"],
-        })
+        applicable_systems.append(
+            {
+                "system": "Crea y Crece B2B",
+                "scope": "B2B (todas las empresas)",
+                **_MANDATE_DATES["B2B_CREA_Y_CRECE"],
+            }
+        )
 
         # Check if territory is out of scope (Basque Country / Navarre foral systems)
         out_of_scope = _is_out_of_scope_territory(province_code)
 
         # Regime-specific system
         if out_of_scope:
-            applicable_systems.append({
-                "scope": "Territorio foral — fuera del alcance de este paquete",
-                "system": "Foral (out of scope)",
-                "deadline": "see_territory_authority",
-                "description": out_of_scope,
-            })
+            applicable_systems.append(
+                {
+                    "scope": "Territorio foral — fuera del alcance de este paquete",
+                    "system": "Foral (out of scope)",
+                    "deadline": "see_territory_authority",
+                    "description": out_of_scope,
+                }
+            )
         elif regime == SpanishRegime.VERIFACTU_SII:
-            applicable_systems.append({
-                "scope": "Grandes empresas / grupos IVA / REDEME",
-                **_MANDATE_DATES["SII"],
-            })
+            applicable_systems.append(
+                {
+                    "scope": "Grandes empresas / grupos IVA / REDEME",
+                    **_MANDATE_DATES["SII"],
+                }
+            )
         else:
             # VERIFACTU
             key = "VERIFACTU_IS" if entity_type == EntityType.IS else "VERIFACTU_IRPF"
-            applicable_systems.append({
-                "scope": (
-                    "Impuesto sobre Sociedades"
-                    if entity_type == EntityType.IS
-                    else "IRPF / autónomos y otros no-SII"
-                ),
-                **_MANDATE_DATES[key],
-            })
+            applicable_systems.append(
+                {
+                    "scope": (
+                        "Impuesto sobre Sociedades"
+                        if entity_type == EntityType.IS
+                        else "IRPF / autónomos y otros no-SII"
+                    ),
+                    **_MANDATE_DATES[key],
+                }
+            )
 
         result: dict[str, Any] = {
             "entity_type": entity_type.value,
@@ -431,9 +440,7 @@ async def handle_es_parse_aeat_response(
                     linea: dict[str, Any] = {
                         "estado_registro": _text(_find(reg, "EstadoRegistro")),
                         "codigo_error_registro": _text(_find(reg, "CodigoErrorRegistro")),
-                        "descripcion_error_registro": _text(
-                            _find(reg, "DescripcionErrorRegistro")
-                        ),
+                        "descripcion_error_registro": _text(_find(reg, "DescripcionErrorRegistro")),
                     }
                     # IDFactura within this line
                     idf = _find(reg, "IDFactura")
@@ -461,9 +468,7 @@ async def handle_es_parse_aeat_response(
                     linea = {
                         "estado_registro": _text(_find(linea_elem, "EstadoRegistro")),
                         "codigo_error": _text(_find(linea_elem, "CodigoErrorRegistro")),
-                        "descripcion_error": _text(
-                            _find(linea_elem, "DescripcionErrorRegistro")
-                        ),
+                        "descripcion_error": _text(_find(linea_elem, "DescripcionErrorRegistro")),
                     }
                     result["respuestas_linea"].append(linea)
 

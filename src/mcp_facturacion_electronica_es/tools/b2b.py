@@ -67,8 +67,12 @@ def build_ubl_invoice(invoice: InvoiceDocument) -> bytes:
     }
     root = etree.Element(f"{{{_UBL_INVOICE_NS}}}Invoice", nsmap=nsmap)
 
-    _sub(root, _CBC_NS, "CustomizationID",
-         "urn:cen.eu:en16931:2017#compliant#urn:fdc:peppol.eu:2017:poacc:billing:3.0")
+    _sub(
+        root,
+        _CBC_NS,
+        "CustomizationID",
+        "urn:cen.eu:en16931:2017#compliant#urn:fdc:peppol.eu:2017:poacc:billing:3.0",
+    )
     _sub(root, _CBC_NS, "ProfileID", "urn:fdc:peppol.eu:2017:poacc:billing:01:1.0")
     _sub(root, _CBC_NS, "ID", invoice.number)
     _sub(root, _CBC_NS, "IssueDate", invoice.date)
@@ -265,20 +269,20 @@ async def handle_es_generate_b2b_einvoice_es(
             xml_bytes = build_facturae_xml(invoice)
             schema_desc = "Facturae 3.2.2 (EN 16931)"
 
-        logger.info(
-            "B2B e-invoice generated for %s (format=%s)", invoice.number, fmt.value
-        )
+        logger.info("B2B e-invoice generated for %s (format=%s)", invoice.number, fmt.value)
 
-        return ok({
-            "xml": xml_bytes.decode("utf-8"),
-            "format": fmt.value,
-            "schema": schema_desc,
-            "invoice_number": invoice.number,
-            "disclaimer": (
-                "El reglamento de desarrollo de la Ley 18/2022 (Crea y Crece) está pendiente "
-                "de publicación. El formato definitivo puede variar."
-            ),
-        })
+        return ok(
+            {
+                "xml": xml_bytes.decode("utf-8"),
+                "format": fmt.value,
+                "schema": schema_desc,
+                "invoice_number": invoice.number,
+                "disclaimer": (
+                    "El reglamento de desarrollo de la Ley 18/2022 (Crea y Crece) está pendiente "
+                    "de publicación. El formato definitivo puede variar."
+                ),
+            }
+        )
 
     except EInvoicingError as exc:
         return err(str(exc))
@@ -315,6 +319,7 @@ async def handle_es_check_b2b_mandate_applicability(
         from mcp_facturacion_electronica_es.tools.utils import (
             _is_out_of_scope_territory,  # noqa: PLC0415
         )
+
         out_of_scope = _is_out_of_scope_territory(province_code)
         if out_of_scope:
             applicable_systems = ["Foral (out of scope)"]
@@ -350,21 +355,23 @@ async def handle_es_check_b2b_mandate_applicability(
         # Crea y Crece (pending)
         applicable_systems.append("B2B Crea y Crece (Ley 18/2022, reglamento pendiente)")
 
-        return ok({
-            "annual_turnover_eur": float(turnover),
-            "province_code": province_code,
-            "entity_type": entity_type.value,
-            "enrolled_in_sii": enrolled,
-            "primary_regime": regime.value,
-            "applicable_systems": applicable_systems,
-            "notes": notes,
-            "sii_exclusion_applies": regime == SpanishRegime.VERIFACTU_SII,
-            "disclaimer": (
-                "Según RD-ley 15/2025 y RD 254/2025. "
-                "Sujeto a cambios por legislación posterior. "
-                "No constituye asesoramiento jurídico ni fiscal."
-            ),
-        })
+        return ok(
+            {
+                "annual_turnover_eur": float(turnover),
+                "province_code": province_code,
+                "entity_type": entity_type.value,
+                "enrolled_in_sii": enrolled,
+                "primary_regime": regime.value,
+                "applicable_systems": applicable_systems,
+                "notes": notes,
+                "sii_exclusion_applies": regime == SpanishRegime.VERIFACTU_SII,
+                "disclaimer": (
+                    "Según RD-ley 15/2025 y RD 254/2025. "
+                    "Sujeto a cambios por legislación posterior. "
+                    "No constituye asesoramiento jurídico ni fiscal."
+                ),
+            }
+        )
 
     except Exception as exc:
         logger.exception("es__check_b2b_mandate_applicability failed")

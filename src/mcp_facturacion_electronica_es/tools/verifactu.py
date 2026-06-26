@@ -144,6 +144,11 @@ def _build_registro_alta(
     previous_emisor_nif: str | None = None,
     previous_num_serie: str | None = None,
     previous_fecha: str | None = None,
+    clave_regimen: str = "01",
+    impuesto: str = "01",
+    calificacion_operacion: str = "S1",
+    recargo_equivalencia_rate: Decimal | None = None,
+    recargo_equivalencia_amount: Decimal | None = None,
 ) -> tuple[etree._Element, str]:
     """Build the RegistroAlta element and return (element, huella).
 
@@ -157,9 +162,7 @@ def _build_registro_alta(
     fecha_es = fmt_date_es(invoice.date)
 
     # Compute totals from vat_summary
-    cuota_total = fmt_amount(
-        sum((v.vat_amount for v in invoice.vat_summary), Decimal("0"))
-    )
+    cuota_total = fmt_amount(sum((v.vat_amount for v in invoice.vat_summary), Decimal("0")))
     importe_total = fmt_amount(
         sum(
             (v.taxable_base + v.vat_amount for v in invoice.vat_summary),
@@ -210,12 +213,18 @@ def _build_registro_alta(
     desglose_iva = _sub(desglose, "DesgloseIVA")
     for vat in invoice.vat_summary:
         detail = _sub(desglose_iva, "DetalleIVA")
-        _sub(detail, "Impuesto", "01")  # 01 = IVA
-        _sub(detail, "ClaveRegimen", "01")  # 01 = régimen general
-        _sub(detail, "CalificacionOperacion", "S1")  # S1 = sujeta no exenta
+        _sub(detail, "Impuesto", impuesto)
+        _sub(detail, "ClaveRegimen", clave_regimen)
+        _sub(detail, "CalificacionOperacion", calificacion_operacion)
         _sub(detail, "TipoImpositivo", fmt_amount(vat.vat_rate))
         _sub(detail, "BaseImponibleOImporteNoSujeto", fmt_amount(vat.taxable_base))
         _sub(detail, "CuotaRepercutida", fmt_amount(vat.vat_amount))
+        if recargo_equivalencia_rate is not None:
+            _sub(detail, "TipoRecargoEquivalencia", fmt_amount(recargo_equivalencia_rate))
+            re_amount = recargo_equivalencia_amount or (
+                vat.taxable_base * recargo_equivalencia_rate / Decimal("100")
+            )
+            _sub(detail, "CuotaRecargoEquivalencia", fmt_amount(re_amount))
 
     _sub(ra, "CuotaTotal", cuota_total)
     _sub(ra, "ImporteTotal", importe_total)
@@ -250,6 +259,12 @@ def _build_registro_alta(
     # TipoHuella must be "01" (SHA-256) per TipoHuellaType enumeration in SuministroInformacion.xsd
     _sub(ra, "TipoHuella", "01")
     _sub(ra, "Huella", huella)
+
+    # [NEED: AEAT XAdES profile clarification for VeriFactu record signing]
+    # ES-SC-12: AEAT has not published a canonical XAdES signing profile for
+    # the RegistroAlta XML itself (distinct from the SOAP envelope mTLS).
+    # The record is submitted unsigned; XAdES signing deferred to v0.3.1
+    # pending AEAT technical publication.
 
     return ra, huella
 
@@ -286,10 +301,11 @@ def _wrap_registro_facturacion(
 
 
 def _parse_verifactu_response(raw: str) -> dict[str, Any]:
-    """Parse an AEAT VERI*FACTU response — extract key fields without echoing raw XML.
+    """Parse an AEAT VERI*FACTU response, extract key fields without echoing raw XML.
 
     ES-SH-2: Raw AEAT responses must not be relayed to the LLM. Only structured
     key fields are returned: EstadoEnvio, CSV, CodigoErrorRegistro, DescripcionErrorRegistro.
+    ES-LC-5: Detect TiempoEsperaEnvio deferral signal.
     """
     result: dict[str, Any] = {}
     if not raw:
@@ -297,13 +313,25 @@ def _parse_verifactu_response(raw: str) -> dict[str, Any]:
     try:
         root = safe_fromstring(raw.encode())
         for field in [
-            "EstadoEnvio", "CSV",
-            "CodigoErrorRegistro", "DescripcionErrorRegistro",
+            "EstadoEnvio",
+            "CSV",
+            "CodigoErrorRegistro",
+            "DescripcionErrorRegistro",
             "EstadoRegistro",
         ]:
             elems = root.xpath(f".//*[local-name()='{field}']")
             if elems:
                 result[field] = elems[0].text
+
+        # ES-LC-5: detect TiempoEsperaEnvio deferral
+        espera_elems = root.xpath(".//*[local-name()='TiempoEsperaEnvio']")
+        if espera_elems and espera_elems[0].text:
+            try:
+                retry_seconds = int(espera_elems[0].text)
+                result["status"] = "deferred"
+                result["retry_after_seconds"] = retry_seconds
+            except ValueError:
+                pass
     except Exception as exc:
         result["parse_error"] = f"Could not parse AEAT response: {exc}"
     return result
@@ -494,6 +522,9 @@ async def handle_es_generate_verifactu_record(
         previous_emisor_nif: str | None = arguments.get("previous_emisor_nif") or None
         previous_num_serie: str | None = arguments.get("previous_num_serie") or None
         previous_fecha: str | None = arguments.get("previous_fecha") or None
+        clave_regimen: str = arguments.get("clave_regimen", "01")
+        impuesto: str = arguments.get("impuesto", "01")
+        calificacion_operacion: str = arguments.get("calificacion_operacion", "S1")
 
         try:
             VerifactuInvoiceType(invoice_type)
@@ -534,6 +565,9 @@ async def handle_es_generate_verifactu_record(
             previous_emisor_nif=previous_emisor_nif,
             previous_num_serie=previous_num_serie,
             previous_fecha=previous_fecha,
+            clave_regimen=clave_regimen,
+            impuesto=impuesto,
+            calificacion_operacion=calificacion_operacion,
         )
 
         xml_bytes = _wrap_registro_facturacion(
@@ -588,12 +622,14 @@ async def handle_es_validate_verifactu_record(
         try:
             root = safe_fromstring(xml_bytes)
         except etree.XMLSyntaxError as exc:
-            return ok({
-                "valid": False,
-                "errors": [f"XML malformado: {exc}"],
-                "warnings": [],
-                "validation_mode": "structural",
-            })
+            return ok(
+                {
+                    "valid": False,
+                    "errors": [f"XML malformado: {exc}"],
+                    "warnings": [],
+                    "validation_mode": "structural",
+                }
+            )
 
         errors: list[str] = []
         warnings: list[str] = []
@@ -604,17 +640,26 @@ async def handle_es_validate_verifactu_record(
 
         # Check mandatory VERI*FACTU elements
         for tag in [
-            "IDEmisorFactura", "NumSerieFactura", "FechaExpedicionFactura",
-            "TipoFactura", "CuotaTotal", "ImporteTotal",
-            "FechaHoraHusoGenRegistro", "Huella",
+            "IDEmisorFactura",
+            "NumSerieFactura",
+            "FechaExpedicionFactura",
+            "TipoFactura",
+            "CuotaTotal",
+            "ImporteTotal",
+            "FechaHoraHusoGenRegistro",
+            "Huella",
         ]:
             _req(tag)
 
         # --- XSD validation (SuministroLR.xsd is the root schema for submissions) ---
         import pathlib  # noqa: PLC0415
+
         xsd_path = (
             pathlib.Path(__file__).parent.parent.parent
-            / "specs" / "verifactu" / "xsd" / "SuministroLR.xsd"
+            / "specs"
+            / "verifactu"
+            / "xsd"
+            / "SuministroLR.xsd"
         )
         validation_mode = "structural"
 
@@ -634,12 +679,14 @@ async def handle_es_validate_verifactu_record(
                 "no encontrado. La validacion estructural esta activa."
             )
 
-        return ok({
-            "valid": len(errors) == 0,
-            "errors": errors,
-            "warnings": warnings,
-            "validation_mode": validation_mode,
-        })
+        return ok(
+            {
+                "valid": len(errors) == 0,
+                "errors": errors,
+                "warnings": warnings,
+                "validation_mode": validation_mode,
+            }
+        )
 
     except Exception as exc:
         logger.exception("es__validate_verifactu_record failed")
@@ -662,14 +709,16 @@ async def handle_es_submit_verifactu_to_aeat(
         gate = ConfirmationGate.get_default()
         if not gate.is_confirmed(confirmation_token):
             env_label = aeat_env()
-            return ok(gate.pending_response(
-                action="es__submit_verifactu_to_aeat",
-                summary=(
-                    f"Submit VERI*FACTU XML to AEAT ({env_label}) for NIF {nif!r}. "
-                    "This action reports the invoice to the Tax Agency and cannot be retracted."
-                ),
-                token=confirmation_token,
-            ))
+            return ok(
+                gate.pending_response(
+                    action="es__submit_verifactu_to_aeat",
+                    summary=(
+                        f"Submit VERI*FACTU XML to AEAT ({env_label}) for NIF {nif!r}. "
+                        "This action reports the invoice to the Tax Agency and cannot be retracted."
+                    ),
+                    token=confirmation_token,
+                )
+            )
 
         env = aeat_env()
         base_url = VERIFACTU_ENDPOINTS[env]
@@ -684,12 +733,14 @@ async def handle_es_submit_verifactu_to_aeat(
             gate.consume(confirmation_token)
             # ES-SH-2: parse response before returning — do not echo raw AEAT response to LLM
             parsed = _parse_verifactu_response(result.get("body", ""))
-            return ok({
-                "status_code": result["status_code"],
-                "environment": env,
-                "parsed_response": parsed,
-                "note": "Use es__parse_aeat_response for full response parsing.",
-            })
+            return ok(
+                {
+                    "status_code": result["status_code"],
+                    "environment": env,
+                    "parsed_response": parsed,
+                    "note": "Use es__parse_aeat_response for full response parsing.",
+                }
+            )
 
         # Fallback: direct mTLS (legacy mode — cert lives in MCP process).
         from mcp_einvoicing_core.http_client import AuthMode, BaseEInvoicingClient  # noqa: PLC0415
@@ -725,12 +776,14 @@ async def handle_es_submit_verifactu_to_aeat(
         # ES-SH-2: parse response before returning — do not echo raw AEAT response to LLM
         gate.consume(confirmation_token)
         parsed = _parse_verifactu_response(response.text)
-        return ok({
-            "status_code": response.status_code,
-            "environment": env,
-            "parsed_response": parsed,
-            "note": "Use es__parse_aeat_response for full response parsing.",
-        })
+        return ok(
+            {
+                "status_code": response.status_code,
+                "environment": env,
+                "parsed_response": parsed,
+                "note": "Use es__parse_aeat_response for full response parsing.",
+            }
+        )
 
     except Exception as exc:
         logger.exception("es__submit_verifactu_to_aeat failed")
@@ -747,20 +800,24 @@ async def handle_es_generate_qr_verifactu(
         total_amount = arguments.get("total_amount")
         size_px = int(arguments.get("size_px", 200))
 
-        for name, value in [("nif", nif), ("invoice_number", invoice_number),
-                             ("invoice_date", invoice_date)]:
+        for name, value in [
+            ("nif", nif),
+            ("invoice_number", invoice_number),
+            ("invoice_date", invoice_date),
+        ]:
             if not value:
                 return err(f"{name} is required", "MISSING_PARAM")
         if total_amount is None:
             return err("total_amount is required", "MISSING_PARAM")
 
-        # Build verification URL (HAC/1177/2024 Art. 10)
+        # Build verification URL (BOE-A-2024-22138, Art. 21)
+        # Base URL is provisional pending AEAT technical publication on Sede Electronica.
+        # Parameters per Art. 21: NIF, NumSerieFactura, FechaExpedicionFactura, ImporteTotal.
         fecha_es = fmt_date_es(invoice_date)
         importe = fmt_amount(Decimal(str(total_amount)))
 
-        # [NEED: confirm exact URL format and parameter names from AEAT technical guide]
         verification_url = (
-            f"https://www2.agenciatributaria.gob.es/wlpl/TIKE-CONT/ValidarQR"
+            f"https://prewww2.aeat.es/wlpl/TIKE-CONT/ValidarQR"
             f"?nif={nif}&numserie={invoice_number}&fecha={fecha_es}&importe={importe}"
         )
 
@@ -768,17 +825,21 @@ async def handle_es_generate_qr_verifactu(
 
         logger.info("VERI*FACTU QR generated for %s / %s", nif, invoice_number)
 
-        return ok({
-            "qr_png_base64": png_b64,
-            "verification_url": verification_url,
-            "caption": "Factura verificable en la sede electrónica de la AEAT",
-            "size_px": size_px,
-        })
+        return ok(
+            {
+                "qr_png_base64": png_b64,
+                "verification_url": verification_url,
+                "mandatory_legends": [
+                    "Factura verificable en la sede electrónica de la AEAT",
+                    "VERIFACTU",
+                ],
+                "size_px": size_px,
+            }
+        )
 
     except ImportError as exc:
         return err(
-            f"qrcode[pil] no está instalado: {exc}. "
-            "Instale con: pip install 'qrcode[pil]'",
+            f"qrcode[pil] no está instalado: {exc}. Instale con: pip install 'qrcode[pil]'",
             "MISSING_DEPENDENCY",
         )
     except Exception as exc:
@@ -865,16 +926,18 @@ async def handle_es_cancel_verifactu_record(
             inner=ra,
         )
 
-        return ok({
-            "xml": xml_bytes.decode("utf-8"),
-            "huella": huella,
-            "fecha_hora_gen": fecha_hora_gen,
-            "cancelled_invoice": {
-                "emisor_nif": issuer_nif,
-                "num_serie": num_serie,
-                "fecha": fecha_es,
-            },
-        })
+        return ok(
+            {
+                "xml": xml_bytes.decode("utf-8"),
+                "huella": huella,
+                "fecha_hora_gen": fecha_hora_gen,
+                "cancelled_invoice": {
+                    "emisor_nif": issuer_nif,
+                    "num_serie": num_serie,
+                    "fecha": fecha_es,
+                },
+            }
+        )
 
     except Exception as exc:
         logger.exception("es__cancel_verifactu_record failed")

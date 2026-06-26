@@ -6,12 +6,12 @@
     "url": "https://github.com/cmendezs/mcp-facturacion-electronica-es",
     "source": "github"
   },
-  "version": "0.2.0",
+  "version": "0.3.0",
   "packages": [
     {
       "registryType": "pypi",
       "identifier": "mcp-facturacion-electronica-es",
-      "version": "0.2.0",
+      "version": "0.3.0",
       "transport": {
         "type": "stdio"
       },
@@ -48,13 +48,13 @@
         },
         {
           "name": "FACE_CLIENT_ID",
-          "description": "OAuth2 client ID for FACe B2B REST API v2.",
+          "description": "JWT client ID for FACe B2B REST API v2.",
           "isRequired": false,
           "format": "string"
         },
         {
           "name": "FACE_CLIENT_SECRET",
-          "description": "OAuth2 client secret for FACe B2B REST API v2.",
+          "description": "JWT client secret for FACe B2B REST API v2.",
           "isRequired": false,
           "format": "string"
         },
