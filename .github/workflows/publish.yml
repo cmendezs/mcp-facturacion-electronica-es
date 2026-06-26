@@ -35,10 +35,10 @@ jobs:
         run: pip install -e ".[dev]"
 
       - name: Lint with ruff
-        run: ruff check mcp_facturacion_electronica_es/ tests/ audit/
+        run: ruff check src/mcp_facturacion_electronica_es/ tests/ audit/
 
       - name: Type-check with mypy
-        run: mypy mcp_facturacion_electronica_es/
+        run: mypy src/mcp_facturacion_electronica_es/
         continue-on-error: true  # Non-blocking until type stubs are complete
 
       - name: Run tests
