@@ -6,12 +6,12 @@
     "url": "https://github.com/cmendezs/mcp-facturacion-electronica-es",
     "source": "github"
   },
-  "version": "0.3.0",
+  "version": "0.5.0",
   "packages": [
     {
       "registryType": "pypi",
       "identifier": "mcp-facturacion-electronica-es",
-      "version": "0.3.0",
+      "version": "0.5.0",
       "transport": {
         "type": "stdio"
       },

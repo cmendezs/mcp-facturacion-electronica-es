@@ -365,6 +365,11 @@ async def handle_es_check_b2b_mandate_applicability(
                 "applicable_systems": applicable_systems,
                 "notes": notes,
                 "sii_exclusion_applies": regime == SpanishRegime.VERIFACTU_SII,
+                "b2b_format_resolved": False,
+                "b2b_format_note": (
+                    "El formato B2B definitivo (UBL 2.1 vs Facturae 3.2.2) está pendiente "
+                    "de la Orden Ministerial bajo Ley 18/2022."
+                ),
                 "disclaimer": (
                     "Según RD-ley 15/2025 y RD 254/2025. "
                     "Sujeto a cambios por legislación posterior. "

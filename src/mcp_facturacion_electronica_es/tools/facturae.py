@@ -5,16 +5,19 @@ Facturae 3.2.2:
     Schema:    specs/facturae/xsd/Facturaev3_2_2.xml
     Source:    https://www.facturae.gob.es/formato/Versiones/Esquema_0_3_2_2_20200304.zip
 
-FACe REST API v2:
-    Sandbox:    https://se-face.redsara.es/factura-face-b2b-api/api/v2
-    Production: https://face.gob.es/factura-face-b2b-api/api/v2
+FACe integrator REST API:
+    Sandbox:    https://se-api-face.redsara.es
+    Production: https://api.face.gob.es
+    Source:     specs/facturae/documentation/FACe-manual-api-integradores.pdf s2.2
 
 XAdES-EPES policy (Orden EHA/962/2007):
     URI: http://www.facturae.es/politica_de_firma_formato_facturae/
          politica_de_firma_formato_facturae_v3_1.pdf
     Hash: SHA-1, from AEAT-validated .xsig (FACTURAE_POLICY_HASH in _helpers.py)
 
-FACe authentication: JWT (JWS-signed tokens), not OAuth2.
+FACe authentication: JWS-signed JWT (RS256, x5c header with PEM cert, 5-min TTL).
+    Source: FACe-manual-api-integradores.pdf s2.3 "Conceptos de autenticación".
+    [NEED: ES-LC-14 — rewrite OAuth2 client-credentials flow to JWS token minting]
 """
 
 from __future__ import annotations
@@ -565,7 +568,7 @@ async def handle_es_submit_to_face(
         env = face_env()
         base_url = FACE_BASE_URLS[env]
 
-        # [NEED: verify FACe OAuth2 token endpoint URL for sandbox and production]
+        # [NEED: ES-LC-14 — replace OAuth2 with JWS token minting per FACe manual s2.3]
         oauth_cfg = OAuthConfig(
             token_url=f"{base_url}/oauth/token",
             client_id=client_id,

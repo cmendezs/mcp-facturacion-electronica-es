@@ -58,58 +58,182 @@ _PRIMARY_INVOICE_CLASS: tuple[str, str] | None = (
 
 _INTENTIONAL_OVERRIDES: dict[str, set[str]] = {
     "mcp_einvoicing_core.base_server": {
-        # OVERRIDE-REASON: ES uses standalone FastMCP (not EInvoicingMCPServer); ABC generator/parser/validator base classes not applicable — each tool is a standalone async function dispatched via _TOOL_HANDLERS
+        # OVERRIDE-REASON: ES uses standalone FastMCP, not EInvoicingMCPServer or its ABC hierarchy
         "BaseDocumentGenerator",
-        # OVERRIDE-REASON: ES uses standalone FastMCP; no document parser class needed — InvoiceDocument.model_validate() used inline in _helpers.parse_invoice()
         "BaseDocumentParser",
-        # OVERRIDE-REASON: ES uses XSD structural checks in tool handlers, not the ABC validator pattern — BaseDocumentValidator not needed
         "BaseDocumentValidator",
-        # OVERRIDE-REASON: ES validates parties inline (NIF format checks), not via the ABC party validator — BasePartyValidator not used
         "BasePartyValidator",
-        # OVERRIDE-REASON: ES uses standalone FastMCP Server directly, not EInvoicingMCPServer — server.py wires tools via _TOOL_HANDLERS dict
         "EInvoicingMCPServer",
-        # OVERRIDE-REASON: ES has no lifecycle manager class — VeriFactu/SII/TicketBAI submit flows are inline in tool handlers, not in a lifecycle manager
         "BaseLifecycleManager",
-        # OVERRIDE-REASON: ES tools return plain dicts via ok()/err() helpers, not typed SubmitResult — SubmitResult not used
         "SubmitResult",
+        "DocumentValidationResult",
+        "TaxIdValidationResult",
+        "scrub",
+        # OVERRIDE-REASON: stdlib/typing re-exports — ES imports these from stdlib directly
+        "ABC",
+        "abstractmethod",
+        "Any",
+        "BaseModel",
+        "Field",
+        "Generic",
+        "TypeVar",
+        "FastMCP",
+        "InvoiceParty",
     },
     "mcp_einvoicing_core.schematron": {
-        # OVERRIDE-REASON: ES uses XSD + business-rule validation, not Schematron — Factura-e and VeriFactu do not have Schematron rules
+        # OVERRIDE-REASON: ES uses XSD + business-rule validation, not Schematron
         "BaseStructuredValidator",
-        # OVERRIDE-REASON: SchematronValidator is XPath-over-XSLT; ES uses etree.XMLSchema for XSD validation instead
         "SchematronValidator",
-        # OVERRIDE-REASON: ValidationMessage / ValidationResult not used — ES validators return plain dicts with {"valid": bool, "errors": list}
         "ValidationMessage",
         "ValidationResult",
+        "BaseJSONValidator",
+        "BaseXSDValidator",
+        "ABC",
+        "abstractmethod",
+        "Path",
+        "dataclass",
+        "field",
+        "safe_parser",
     },
     "mcp_einvoicing_core.pdf": {
-        # OVERRIDE-REASON: PDF/A-3 embedding is not required for Facturae 3.2.2 or VeriFactu — neither format mandates PDF embedding
+        # OVERRIDE-REASON: PDF/A-3 embedding not required for Facturae 3.2.2 or VeriFactu
         "PDFEmbedder",
     },
     "mcp_einvoicing_core.download_rules": {
-        # OVERRIDE-REASON: ES does not use the artefact-download framework (no KSeF-style spec ZIP bootstrapping) — specs are populated manually into specs/
+        # OVERRIDE-REASON: ES populates specs/ manually, no artefact-download framework
         "DownloadSpec",
         "download_artefacts",
+        "main",
+        "Path",
+        "dataclass",
+        "field",
+        "entry_points",
     },
     "mcp_einvoicing_core.http_client": {
-        # OVERRIDE-REASON: ES uses per-call mTLS (AEAT) or OAuth2 (FACe) without session token caching — TokenCache not applicable to certificate-based auth flows
+        # OVERRIDE-REASON: ES uses per-call mTLS (AEAT) or JWS (FACe) without session token caching
         "TokenCache",
+        "BaseEInvoicingConfig",
+        "AuthenticationError",
+        "PlatformError",
+        # OVERRIDE-REASON: ES imports AuthMode/BaseEInvoicingClient/OAuthConfig inside function bodies (local imports for lazy loading); audit only checks module-level imports
+        "AuthMode",
+        "BaseEInvoicingClient",
+        "OAuthConfig",
+        "OAuthValues",
+        # OVERRIDE-REASON: stdlib re-exports
+        "Any",
+        "BaseModel",
+        "BaseSettings",
+        "Enum",
+        "Field",
+        "Path",
+        "field_validator",
+        "parsedate_to_datetime",
+        "urlparse",
     },
     "mcp_einvoicing_core.exceptions": {
-        # OVERRIDE-REASON: PartyValidationError not raised by ES tools — party validation is inline with plain EInvoicingError
+        # OVERRIDE-REASON: ES uses plain EInvoicingError, not specialised exception subclasses
         "PartyValidationError",
-        # OVERRIDE-REASON: SchematronValidationError not raised — ES uses XSD validation, not Schematron; errors returned as plain dicts
         "SchematronValidationError",
+        "DocumentGenerationError",
+        "AuthenticationError",
+        "PlatformError",
+        "ValidationError",
+        "XSDValidationError",
+    },
+    "mcp_einvoicing_core.digital_signature": {
+        # OVERRIDE-REASON: ES implements XAdES-EPES inline, not via core signing abstractions
+        "BaseDocumentSigner",
+        "XMLDSigSigner",
+        "XMLDSigSignerConfig",
+        "XAdESEPESSigner",
+        "XAdESSignerConfig",
+        "ABC",
+        "abstractmethod",
+        "dataclass",
+        "field",
+        "datetime",
+        "timezone",
+    },
+    "mcp_einvoicing_core.peppol": {
+        # OVERRIDE-REASON: ES does not use Peppol — Spanish e-invoicing is SII/VeriFactu/FACe
+        "PeppolEnvironment",
+        "PeppolLookupResult",
+        "PeppolParticipantId",
+        "PeppolSMPClient",
+        "PeppolServiceInfo",
+        "Enum",
+        "PlatformError",
+        "dataclass",
+        "field",
+    },
+    "mcp_einvoicing_core.profile_registry": {
+        # OVERRIDE-REASON: ES uses hardcoded regime codes (ClaveRegimen), not the core profile registry
+        "ProfileEntry",
+        "ProfileRegistry",
+        "set_profile_registry",
+        "dataclass",
+    },
+    "mcp_einvoicing_core.xml_utils": {
+        # OVERRIDE-REASON: ES uses lxml etree directly for XML construction
+        "xml_element",
+        "xml_escape",
+        "xml_optional",
+        "filter_empty_values",
+        "resolve_xml_input",
+        "format_amount",
+        "format_quantity",
+        "format_error",
+        "validate_date_iso",
+        "validate_iban",
+        "mark_untrusted",
+        "mark_untrusted_fields",
+        "safe_parser",
+        "Any",
+        "Decimal",
+    },
+    "mcp_einvoicing_core.en16931": {
+        # OVERRIDE-REASON: stdlib re-exports — ES imports from stdlib/pydantic directly
+        "BaseModel",
+        "Decimal",
+        "Field",
+        "date",
+        "field_validator",
+        "model_validator",
+        # OVERRIDE-REASON: EN16931 sub-types accessed via EN16931Invoice base class, not imported directly
+        "EN16931Address",
+        "EN16931AllowanceCharge",
+        "EN16931LineItem",
+        "EN16931Party",
+        "EN16931PaymentMeans",
+        "EN16931Tax",
+    },
+    "mcp_einvoicing_core.models": {
+        # OVERRIDE-REASON: stdlib re-exports — ES imports from stdlib/pydantic directly
+        "BaseModel",
+        "Decimal",
+        "DocumentValidationResult",
+        "Field",
+        "TaxIdValidationResult",
+        "field_validator",
+        "model_validator",
+        # OVERRIDE-REASON: ES accesses these types through InvoiceDocument, not imported directly
+        "InvoiceLineItem",
+        "InvoiceParty",
+        "PartyAddress",
+        "PaymentTerms",
     },
 }
 
 _ES_MODULES: list[str] = [
     "mcp_facturacion_electronica_es",
+    "mcp_facturacion_electronica_es._helpers",
+    "mcp_facturacion_electronica_es.config",
+    "mcp_facturacion_electronica_es.server",
     "mcp_facturacion_electronica_es.models.es",
     "mcp_facturacion_electronica_es.tools.verifactu",
     "mcp_facturacion_electronica_es.tools.facturae",
     "mcp_facturacion_electronica_es.tools.sii",
-    # tools.ticketbai is intentionally absent — TicketBAI (Pais Vasco) is out of scope
     "mcp_facturacion_electronica_es.tools.b2b",
     "mcp_facturacion_electronica_es.tools.utils",
 ]

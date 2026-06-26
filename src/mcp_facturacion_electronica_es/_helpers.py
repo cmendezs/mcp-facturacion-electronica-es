@@ -120,38 +120,57 @@ VERIFACTU_ENDPOINTS: MappingProxyType[str, str] = MappingProxyType(
             "https://www2.agenciatributaria.gob.es"
             "/wlpl/TIKE-CONT/ws/SistemaFacturacion/FactSistemaFacturacion"
         ),
-        # [NEED: verify production URL against published AEAT technical guide]
+        # [NEED: verify both URLs against AEAT VeriFactu technical guide PDF
+        #  (not included in bundled specs/ as of 2026-06-26; XSD namespace path
+        #  /tike/cont/ws/ is consistent with the TIKE-CONT path used here)]
     }
 )
 
-#: SII issued-invoice submission endpoints (immutable)
-SII_ISSUED_ENDPOINTS: MappingProxyType[str, str] = MappingProxyType(
+#: SII issued-invoice submission endpoints (immutable).
+#: Each environment exposes a primary + secondary host for failover.
+#: Source: specs/sii/schemas/SuministroFactEmitidas.wsdl
+SII_ISSUED_ENDPOINTS: MappingProxyType[str, MappingProxyType[str, str]] = MappingProxyType(
     {
-        "sandbox": ("https://www7.aeat.es/wlpl/BURT-JDIT/ws/fe/SiiEndPointFacultativoRecepcion"),
-        "production": (
-            "https://www2.agenciatributaria.gob.es"
-            "/wlpl/BURT-JDIT/ws/fe/SiiEndPointFacultativoRecepcion"
+        "sandbox": MappingProxyType(
+            {
+                "primary": "https://prewww1.aeat.es/wlpl/SSII-FACT/ws/fe/SiiFactFEV1SOAP",
+                "secondary": "https://prewww10.aeat.es/wlpl/SSII-FACT/ws/fe/SiiFactFEV1SOAP",
+            }
         ),
-        # [NEED: verify sandbox URL — AEAT may use www7 or www10]
+        "production": MappingProxyType(
+            {
+                "primary": "https://www1.agenciatributaria.gob.es/wlpl/SSII-FACT/ws/fe/SiiFactFEV1SOAP",
+                "secondary": "https://www10.agenciatributaria.gob.es/wlpl/SSII-FACT/ws/fe/SiiFactFEV1SOAP",
+            }
+        ),
     }
 )
 
-#: SII received-invoice submission endpoints (immutable)
-SII_RECEIVED_ENDPOINTS: MappingProxyType[str, str] = MappingProxyType(
+#: SII received-invoice submission endpoints (immutable).
+#: Source: specs/sii/schemas/SuministroFactRecibidas.wsdl
+SII_RECEIVED_ENDPOINTS: MappingProxyType[str, MappingProxyType[str, str]] = MappingProxyType(
     {
-        "sandbox": ("https://www7.aeat.es/wlpl/BURT-JDIT/ws/fr/SiiEndPointFacultativoRecepcion"),
-        "production": (
-            "https://www2.agenciatributaria.gob.es"
-            "/wlpl/BURT-JDIT/ws/fr/SiiEndPointFacultativoRecepcion"
+        "sandbox": MappingProxyType(
+            {
+                "primary": "https://prewww1.aeat.es/wlpl/SSII-FACT/ws/fr/SiiFactFRV1SOAP",
+                "secondary": "https://prewww10.aeat.es/wlpl/SSII-FACT/ws/fr/SiiFactFRV1SOAP",
+            }
+        ),
+        "production": MappingProxyType(
+            {
+                "primary": "https://www1.agenciatributaria.gob.es/wlpl/SSII-FACT/ws/fr/SiiFactFRV1SOAP",
+                "secondary": "https://www10.agenciatributaria.gob.es/wlpl/SSII-FACT/ws/fr/SiiFactFRV1SOAP",
+            }
         ),
     }
 )
 
-#: FACe B2B REST API v2 base URLs (immutable)
+#: FACe integrator REST API base URLs (immutable).
+#: Source: specs/facturae/documentation/FACe-manual-api-integradores.pdf section 2.2
 FACE_BASE_URLS: MappingProxyType[str, str] = MappingProxyType(
     {
-        "sandbox": "https://se-face.redsara.es/factura-face-b2b-api/api/v2",
-        "production": "https://face.gob.es/factura-face-b2b-api/api/v2",
+        "sandbox": "https://se-api-face.redsara.es",
+        "production": "https://api.face.gob.es",
     }
 )
 

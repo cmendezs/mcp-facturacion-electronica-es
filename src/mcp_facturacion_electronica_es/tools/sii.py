@@ -597,7 +597,7 @@ async def handle_es_submit_sii_batch(
         endpoints = (
             SII_ISSUED_ENDPOINTS if record_type == SIIRecordType.issued else SII_RECEIVED_ENDPOINTS
         )
-        base_url = endpoints[env]
+        base_url = endpoints[env]["primary"]
 
         use_signer = SignerClient.is_configured()
         if use_signer:
@@ -794,7 +794,7 @@ async def handle_es_query_sii_status(
         )
         cert_password = aeat_settings.certificate_password
         client = BaseEInvoicingClient(
-            base_url=endpoints[env],
+            base_url=endpoints[env]["primary"],
             auth_mode=AuthMode.MTLS,
             cert_path=cert_path,
             cert_password=cert_password,
