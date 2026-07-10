@@ -88,6 +88,10 @@ _INTENTIONAL_OVERRIDES: dict[str, set[str]] = {
         "ValidationResult",
         "BaseJSONValidator",
         "BaseXSDValidator",
+        # OVERRIDE-REASON: ES-AG-1 (2026-07) — ES has no Schematron pipeline (Factura-e/VeriFactu validated via XSD); Saxon/XSLT-2.0 helpers are unused here
+        "SaxonSchematronValidator",
+        "get_xslt_version",
+        "load_schematron_validator",
         "ABC",
         "abstractmethod",
         "Path",
@@ -148,6 +152,9 @@ _INTENTIONAL_OVERRIDES: dict[str, set[str]] = {
         "XMLDSigSignerConfig",
         "XAdESEPESSigner",
         "XAdESSignerConfig",
+        # OVERRIDE-REASON: ES-AG-1 (2026-07) — Facturae/VeriFactu use XAdES-EPES, not CAdES; CAdES signer is FR-specific (Factur-X)
+        "CAdESSigner",
+        "CAdESSignerConfig",
         "ABC",
         "abstractmethod",
         "dataclass",
