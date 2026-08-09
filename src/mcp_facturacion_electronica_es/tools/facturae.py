@@ -15,13 +15,18 @@ XAdES-EPES policy (Orden EHA/962/2007):
          politica_de_firma_formato_facturae_v3_1.pdf
     Hash: SHA-1, from AEAT-validated .xsig (FACTURAE_POLICY_HASH in _helpers.py)
 
-FACe authentication: JWS-signed JWT (RS256, x5c header with PEM cert, 5-min TTL).
+FACe authentication: JWS-signed JWT (RS256, x5c header with clean-PEM cert, 5-min TTL).
+    Payload carries a "username" claim: SHA-1 hex digest of the clean-PEM cert bytes
+    (same bytes as the x5c header entry). Uses AuthMode.JWS from mcp-einvoicing-core
+    (core v1.16.0). [Inference] header/claim shape per s2.3; not yet validated
+    against a live AEAT sandbox acknowledgement.
     Source: FACe-manual-api-integradores.pdf s2.3 "Conceptos de autenticación".
-    [NEED: ES-LC-14 — rewrite OAuth2 client-credentials flow to JWS token minting]
 """
 
 from __future__ import annotations
 
+import base64
+import hashlib
 import logging
 from decimal import Decimal
 from typing import Any
@@ -30,8 +35,13 @@ import mcp.types as types
 from lxml import etree
 from mcp_einvoicing_core.base_server import assert_not_read_only
 from mcp_einvoicing_core.confirmation import ConfirmationGate
-from mcp_einvoicing_core.digital_signature import XAdESEPESSigner, XAdESSignerConfig
+from mcp_einvoicing_core.digital_signature import (
+    XAdESEPESSigner,
+    XAdESSignerConfig,
+    load_certificate_der,
+)
 from mcp_einvoicing_core.exceptions import EInvoicingError
+from mcp_einvoicing_core.http_client import AuthMode, BaseEInvoicingClient, JWSConfig
 from mcp_einvoicing_core.models import InvoiceDocument
 from mcp_einvoicing_core.signer_client import SignerClient
 from mcp_einvoicing_core.xml_utils import safe_fromstring
@@ -47,6 +57,7 @@ from mcp_facturacion_electronica_es._helpers import (
     parse_invoice,
 )
 from mcp_facturacion_electronica_es.config import aeat_settings
+from mcp_facturacion_electronica_es.models.es import FACTURAE_TAX_TYPE_CODES, SpanishTaxType
 
 logger = logging.getLogger(__name__)
 
@@ -136,8 +147,12 @@ def build_facturae_xml(
     invoice: InvoiceDocument,
     invoice_issuer_type: str = "EU",
     irpf_amount: Decimal | None = None,
+    irpf_rate: Decimal | None = None,
     resolution_reference: str | None = None,
     receiver_transaction_reference: str | None = None,
+    tax_type: str = "IVA",
+    recargo_equivalencia_rate: Decimal | None = None,
+    recargo_equivalencia_amount: Decimal | None = None,
 ) -> bytes:
     """Build a Facturae 3.2.2 XML document from an InvoiceDocument.
 
@@ -145,12 +160,24 @@ def build_facturae_xml(
         invoice: Validated core InvoiceDocument.
         invoice_issuer_type: "EU" (private seller), "EM" (issuer is buyer), "TE" (third party).
         irpf_amount: IRPF withholding amount to deduct from invoice total.
+        irpf_rate: IRPF withholding rate as a percentage (e.g. 15.00), emitted in the
+            <TaxesWithheld><Tax TaxTypeCode="04"> block alongside irpf_amount.
         resolution_reference: PA resolution reference (B2G invoices).
         receiver_transaction_reference: PA receiver transaction reference (B2G invoices).
+        tax_type: Applicable indirect tax: "IVA", "IPSI", or "IGIC" (SpanishTaxType).
+            Applies to every tax line on the invoice: mixed IGIC/IVA on a single
+            invoice is not supported. IGIC/IPSI rate values are caller-supplied via
+            each line's vat_rate; this package does not assert Canary Islands IGIC
+            rate values ([NEED: verify IGIC rates], ES-INV-1).
+        recargo_equivalencia_rate: Recargo de Equivalencia surcharge rate (percentage)
+            applied on top of IVA for retailers under the special regime.
+        recargo_equivalencia_amount: Explicit surcharge amount; computed from
+            taxable_base * recargo_equivalencia_rate / 100 when omitted.
 
     Returns:
         UTF-8 encoded Facturae 3.2.2 XML bytes (unsigned).
     """
+    tax_type_code = FACTURAE_TAX_TYPE_CODES[SpanishTaxType(tax_type)]
     nsmap = {
         None: _FACTURAE_NS,
         "ds": _DS_NS,
@@ -211,25 +238,46 @@ def build_facturae_xml(
 
     # TaxesOutputs
     taxes = _sub(inv, "TaxesOutputs")
+    recargo_total = Decimal("0")
     for vat in invoice.vat_summary:
         tax = _sub(taxes, "Tax")
-        _sub(tax, "TaxTypeCode", "01")  # 01 = IVA
+        _sub(tax, "TaxTypeCode", tax_type_code)
         _sub(tax, "TaxRate", fmt_amount(vat.vat_rate))
         tb = _sub(tax, "TaxableBase")
         _sub(tb, "TotalAmount", fmt_amount(vat.taxable_base))
         ta_elem = _sub(tax, "TaxAmount")
         _sub(ta_elem, "TotalAmount", fmt_amount(vat.vat_amount))
+        if recargo_equivalencia_rate is not None:
+            re_amount = recargo_equivalencia_amount
+            if re_amount is None:
+                re_amount = vat.taxable_base * recargo_equivalencia_rate / Decimal("100")
+            recargo_total += re_amount
+            _sub(tax, "EquivalenceSurcharge", fmt_amount(recargo_equivalencia_rate))
+            esa = _sub(tax, "EquivalenceSurchargeAmount")
+            _sub(esa, "TotalAmount", fmt_amount(re_amount))
+
+    # TaxesWithheld (IRPF, TaxTypeCode 04): sibling of TaxesOutputs
+    withheld = irpf_amount or Decimal("0")
+    if withheld:
+        withheld_elem = _sub(inv, "TaxesWithheld")
+        wtax = _sub(withheld_elem, "Tax")
+        _sub(wtax, "TaxTypeCode", "04")  # 04 = IRPF
+        _sub(wtax, "TaxRate", fmt_amount(irpf_rate or Decimal("0")))
+        wtb = _sub(wtax, "TaxableBase")
+        _sub(wtb, "TotalAmount", fmt_amount(tax_base))
+        wta = _sub(wtax, "TaxAmount")
+        _sub(wta, "TotalAmount", fmt_amount(withheld))
 
     # InvoiceTotals
+    tax_output_total = tax_total + recargo_total
     totals = _sub(inv, "InvoiceTotals")
     _sub(totals, "TotalGrossAmount", fmt_amount(tax_base))
     _sub(totals, "TotalGeneralDiscounts", "0.00")
     _sub(totals, "TotalGeneralSurcharges", "0.00")
     _sub(totals, "TotalGrossAmountBeforeTaxes", fmt_amount(tax_base))
-    _sub(totals, "TotalTaxOutputs", fmt_amount(tax_total))
-    withheld = irpf_amount or Decimal("0")
+    _sub(totals, "TotalTaxOutputs", fmt_amount(tax_output_total))
     _sub(totals, "TotalTaxesWithheld", fmt_amount(withheld))
-    invoice_total = grand_total - withheld
+    invoice_total = tax_base + tax_output_total - withheld
     _sub(totals, "InvoiceTotal", fmt_amount(invoice_total))
     _sub(totals, "TotalOutstandingAmount", fmt_amount(invoice_total))
     _sub(totals, "TotalExecutableAmount", fmt_amount(invoice_total))
@@ -247,7 +295,7 @@ def build_facturae_xml(
             _sub(il, "GrossAmount", fmt_amount(line.total_price))
             line_taxes = _sub(il, "TaxesOutputs")
             lt = _sub(line_taxes, "Tax")
-            _sub(lt, "TaxTypeCode", "01")
+            _sub(lt, "TaxTypeCode", tax_type_code)
             _sub(lt, "TaxRate", fmt_amount(line.vat_rate))
             ltb = _sub(lt, "TaxableBase")
             _sub(ltb, "TotalAmount", fmt_amount(line.total_price))
@@ -292,6 +340,52 @@ TOOL_ES_GENERATE_FACTURAE_XML = types.Tool(
                 "description": "Versión del esquema Facturae (por defecto: '3.2.2').",
                 "default": "3.2.2",
             },
+            "invoice_issuer_type": {
+                "type": "string",
+                "enum": ["EU", "EM", "TE"],
+                "description": (
+                    "EU (emisor=vendedor), EM (emisor=comprador), TE (tercero). "
+                    "Por defecto: 'EU'."
+                ),
+                "default": "EU",
+            },
+            "tax_type": {
+                "type": "string",
+                "enum": ["IVA", "IPSI", "IGIC"],
+                "description": (
+                    "Impuesto indirecto aplicable a todas las líneas de la factura "
+                    "(IVA: península/Baleares; IPSI: Ceuta/Melilla; IGIC: Canarias). "
+                    "No se admite mezclar impuestos en una misma factura. Por defecto: 'IVA'."
+                ),
+                "default": "IVA",
+            },
+            "recargo_equivalencia_rate": {
+                "type": "number",
+                "description": "Tipo de Recargo de Equivalencia (%), si aplica.",
+            },
+            "recargo_equivalencia_amount": {
+                "type": "number",
+                "description": (
+                    "Importe explícito del Recargo de Equivalencia. Si se omite, se "
+                    "calcula como base_imponible * recargo_equivalencia_rate / 100."
+                ),
+            },
+            "irpf_amount": {
+                "type": "number",
+                "description": "Importe de retención IRPF a deducir del total de la factura.",
+            },
+            "irpf_rate": {
+                "type": "number",
+                "description": "Tipo de retención IRPF (%), emitido en TaxesWithheld.",
+            },
+            "resolution_reference": {
+                "type": "string",
+                "description": "ResolutionReference para facturas B2G a Administraciones Públicas.",
+            },
+            "receiver_transaction_reference": {
+                "type": "string",
+                "description": "ReceiverTransactionReference para facturas B2G.",
+            },
         },
         "required": ["invoice"],
     },
@@ -310,11 +404,10 @@ TOOL_ES_SIGN_FACTURAE_XADES = types.Tool(
             "xml": {"type": "string", "description": "XML Facturae sin firmar."},
             "cert_path": {
                 "type": "string",
-                "description": "Ruta al certificado PKCS#12 (.p12 / .pfx).",
-            },
-            "cert_password": {
-                "type": "string",
-                "description": "Contraseña del certificado (omitir si sin protección).",
+                "description": (
+                    "Ruta al certificado PKCS#12 (.p12 / .pfx). La contraseña se lee "
+                    "de AEAT_CERTIFICATE_PASSWORD (nunca como argumento de la tool)."
+                ),
             },
             "signature_policy_id": {
                 "type": "string",
@@ -337,7 +430,8 @@ TOOL_ES_SUBMIT_TO_FACE = types.Tool(
     description=(
         "Envía un XML Facturae firmado con XAdES a FACe (Punto General de Entrada de Facturas "
         "Electrónicas) a través de la API REST B2B de FACe v2. "
-        "Requiere FACE_ENV, FACE_CLIENT_ID y FACE_CLIENT_SECRET."
+        "Autenticación JWS (RS256 + x5c) per FACe-manual-api-integradores.pdf s2.3: "
+        "requiere FACE_ENV y AEAT_CERTIFICATE_PATH (+ AEAT_CERTIFICATE_PASSWORD)."
     ),
     inputSchema={
         "type": "object",
@@ -397,6 +491,59 @@ TOOL_ES_VALIDATE_FACTURAE_SCHEMA = types.Tool(
 
 
 # ---------------------------------------------------------------------------
+# FACe JWS authentication (ES-LC-14) and response masking (ES-SH-7)
+# ---------------------------------------------------------------------------
+
+
+def _build_face_client(base_url: str) -> BaseEInvoicingClient:
+    """Build a FACe-authenticated HTTP client using JWS per FACe manual s2.3.
+
+    The JWT payload carries a "username" claim: the SHA-1 hex digest of the
+    certificate's clean-PEM bytes (base64 DER, no BEGIN/END markers, no line
+    breaks), the same bytes attached as the JOSE header's x5c claim. SHA-1 is
+    used because it is what the FACe spec mandates for this claim, not as a
+    security-relevant hash.
+    """
+    cert_path = aeat_settings.certificate_path or ""
+    if not cert_path:
+        raise EInvoicingError(
+            "AEAT_CERTIFICATE_PATH es obligatorio para autenticación JWS con FACe "
+            "(FACe-manual-api-integradores.pdf s2.3)."
+        )
+    clean_pem = base64.b64encode(
+        load_certificate_der(cert_path, aeat_settings.certificate_password)
+    )
+    username_claim = hashlib.sha1(clean_pem).hexdigest()
+    jws_config = JWSConfig(
+        cert_path=cert_path,
+        cert_password=aeat_settings.certificate_password,
+        ttl_seconds=300,
+        extra_claims={"username": username_claim},
+    )
+    return BaseEInvoicingClient(base_url=base_url, auth_mode=AuthMode.JWS, jws_config=jws_config)
+
+
+def _parse_face_response(response: Any) -> dict[str, Any]:
+    """Extract a structured, non-sensitive subset from a raw FACe HTTP response.
+
+    Never returns the full raw response body to the LLM (ES-SH-7): only the
+    known FACe response fields are surfaced.
+    """
+    body: dict[str, Any] = {}
+    if response.headers.get("content-type", "").startswith("application/json"):
+        try:
+            body = response.json()
+        except Exception:
+            body = {}
+    return {
+        "status_code": response.status_code,
+        "codigo": body.get("codigo"),
+        "descripcion": body.get("descripcion"),
+        "numeroRegistro": body.get("numeroRegistro"),
+    }
+
+
+# ---------------------------------------------------------------------------
 # Handlers
 # ---------------------------------------------------------------------------
 
@@ -411,14 +558,21 @@ async def handle_es_generate_facturae_xml(
 
         invoice = parse_invoice(invoice_data)
         invoice_issuer_type: str = arguments.get("invoice_issuer_type", "EU")
-        irpf_amount_str = arguments.get("irpf_amount")
-        irpf_amt = Decimal(str(irpf_amount_str)) if irpf_amount_str is not None else None
+
+        def _opt_decimal(key: str) -> Decimal | None:
+            raw = arguments.get(key)
+            return Decimal(str(raw)) if raw is not None else None
+
         xml_bytes = build_facturae_xml(
             invoice,
             invoice_issuer_type=invoice_issuer_type,
-            irpf_amount=irpf_amt,
+            irpf_amount=_opt_decimal("irpf_amount"),
+            irpf_rate=_opt_decimal("irpf_rate"),
             resolution_reference=arguments.get("resolution_reference"),
             receiver_transaction_reference=arguments.get("receiver_transaction_reference"),
+            tax_type=arguments.get("tax_type", "IVA"),
+            recargo_equivalencia_rate=_opt_decimal("recargo_equivalencia_rate"),
+            recargo_equivalencia_amount=_opt_decimal("recargo_equivalencia_amount"),
         )
 
         logger.info("Facturae 3.2.2 XML generated for invoice %s", invoice.number)
@@ -483,10 +637,9 @@ async def handle_es_sign_facturae_xades(
                     "(EINVOICING_SIGNER_SOCKET not set)",
                     "MISSING_PARAM",
                 )
-            cert_password: str | None = arguments.get("cert_password") or None
             config = XAdESSignerConfig(
                 cert_path=cert_path,
-                cert_password=cert_password,
+                cert_password=aeat_settings.certificate_password,
                 signature_policy_id=policy_id,
                 signature_policy_hash=policy_hash,
             )
@@ -524,8 +677,6 @@ async def handle_es_submit_to_face(
     arguments: dict[str, Any],
 ) -> list[types.TextContent]:
     try:
-        from mcp_einvoicing_core.http_client import AuthMode, BaseEInvoicingClient, OAuthConfig
-
         xml_str = arguments.get("xml", "")
         admin_unit = arguments.get("administrative_unit", "")
         accounting_office = arguments.get("accounting_office", "")
@@ -557,28 +708,9 @@ async def handle_es_submit_to_face(
                 )
             )
 
-        client_id = aeat_settings.face_client_id or ""
-        client_secret = aeat_settings.face_client_secret or ""
-        if not client_id or not client_secret:
-            return err(
-                "FACE_CLIENT_ID y FACE_CLIENT_SECRET son obligatorios.",
-                "MISSING_CONFIG",
-            )
-
         env = face_env()
         base_url = FACE_BASE_URLS[env]
-
-        # [NEED: ES-LC-14 — replace OAuth2 with JWS token minting per FACe manual s2.3]
-        oauth_cfg = OAuthConfig(
-            token_url=f"{base_url}/oauth/token",
-            client_id=client_id,
-            client_secret=client_secret,
-        )
-        client = BaseEInvoicingClient(
-            base_url=base_url,
-            auth_mode=AuthMode.OAUTH2_CLIENT_CREDENTIALS,
-            oauth_config=oauth_cfg,
-        )
+        client = _build_face_client(base_url)
 
         xml_bytes = xml_str.encode() if isinstance(xml_str, str) else xml_str
         payload = {
@@ -594,15 +726,9 @@ async def handle_es_submit_to_face(
         )
 
         gate.consume(confirmation_token)
-        return ok(
-            {
-                "status_code": response.status_code,
-                "environment": env,
-                "response": response.json()
-                if response.headers.get("content-type", "").startswith("application/json")
-                else response.text[:2000],
-            }
-        )
+        result = _parse_face_response(response)
+        result["environment"] = env
+        return ok(result)
 
     except Exception as exc:
         logger.exception("es__submit_to_face failed")
@@ -613,52 +739,33 @@ async def handle_es_get_face_invoice_status(
     arguments: dict[str, Any],
 ) -> list[types.TextContent]:
     try:
-        from mcp_einvoicing_core.http_client import AuthMode, BaseEInvoicingClient, OAuthConfig
-
         invoice_id = arguments.get("invoice_id", "")
         if not invoice_id:
             return err("invoice_id is required", "MISSING_PARAM")
 
-        client_id = aeat_settings.face_client_id or ""
-        client_secret = aeat_settings.face_client_secret or ""
-        if not client_id or not client_secret:
-            return err("FACE_CLIENT_ID y FACE_CLIENT_SECRET son obligatorios.", "MISSING_CONFIG")
-
         env = face_env()
         base_url = FACE_BASE_URLS[env]
-        oauth_cfg = OAuthConfig(
-            token_url=f"{base_url}/oauth/token",
-            client_id=client_id,
-            client_secret=client_secret,
-        )
-        client = BaseEInvoicingClient(
-            base_url=base_url,
-            auth_mode=AuthMode.OAUTH2_CLIENT_CREDENTIALS,
-            oauth_config=oauth_cfg,
-        )
+        client = _build_face_client(base_url)
 
         response = await client._request("GET", f"/facturas/{invoice_id}")
-        body = (
-            response.json()
-            if response.headers.get("content-type", "").startswith("application/json")
-            else {"raw": response.text}
-        )
+        parsed = _parse_face_response(response)
 
-        # Map known FACe status codes
+        # Map known FACe tramitación status codes (the "codigo" field)
         status_codes = {
             "1200": "Registrada",
             "2400": "Reconocida por la unidad tramitadora",
             "3100": "Rechazada",
             "4100": "Pagada",
         }
-        raw_status = str(body.get("codigo", body.get("status", "")))
+        raw_status = str(parsed.get("codigo") or "")
         return ok(
             {
                 "invoice_id": invoice_id,
                 "status_code": raw_status,
                 "status_description": status_codes.get(raw_status, "Desconocido"),
                 "environment": env,
-                "response": body,
+                "http_status_code": parsed["status_code"],
+                "descripcion": parsed.get("descripcion"),
             }
         )
 

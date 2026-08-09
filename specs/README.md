@@ -35,6 +35,7 @@ specs/
 | Factura-e XSLT viewer (3.2.2) | 3.2.2 | https://www.facturae.gob.es |
 | VeriFactu — BOE-A-2024-22138 | Orden HAC/1177/2024 | https://www.boe.es |
 | VeriFactu — BOE-A-2024-22138 (consolidated) | RD 1007/2023 + HAC/1177/2024 | https://www.boe.es |
+| VeriFactu technical reference (huella, QR, WSDL ops) | `[Inference]`, 2026-08 | User-supplied; transcribed in `verifactu/documentation/verifactu-technical-reference.md`. Supersede with the official AEAT huella note PDF and WSDL binary once available. |
 | Ley Crea y Crece — BOE-A-2022-15818 | Ley 18/2022 | https://www.boe.es |
 
 ## Pending specs

@@ -205,15 +205,17 @@ def build_sii_issued_record(
     invoice: InvoiceDocument,
     comm_type: str = "A0",
     clave_regimen: str = "01",
-    impuesto: str = "01",
 ) -> bytes:
     """Build a complete SII SOAP envelope for an issued invoice (FacturaExpedida).
+
+    AEAT SII reports IVA only: there is no "impuesto" element in the
+    SuministroLRFacturasEmitidas schema. Canary Islands IGIC is reported to a
+    separate ATC SII system, out of this package's scope.
 
     Args:
         invoice: Core InvoiceDocument.
         comm_type: TipoComunicacion: A0 (new), A1 (modification), A4 (removal).
         clave_regimen: ClaveRegimenEspecialOTrascendencia (default "01" general).
-        impuesto: Impuesto code, "01" IVA, "02" IGIC, "03" IPSI (default "01").
 
     Returns:
         UTF-8 SOAP envelope bytes.

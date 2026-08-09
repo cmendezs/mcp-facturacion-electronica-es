@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import pytest
 
+from mcp_facturacion_electronica_es._helpers import fmt_amount
 from mcp_facturacion_electronica_es.models.es import EntityType, SpanishRegime
 from mcp_facturacion_electronica_es.tools.utils import (
     _SII_TURNOVER_THRESHOLD_EUR,
@@ -37,6 +38,27 @@ from mcp_facturacion_electronica_es.tools.utils import (
 )
 def test_detect_regime(province_code: str, enrolled: bool, expected: SpanishRegime) -> None:
     assert _detect_regime(province_code, enrolled) == expected
+
+
+# ---------------------------------------------------------------------------
+# fmt_amount: HALF_UP rounding (ES-TL-8)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "value, expected",
+    [
+        ("2.665", "2.67"),
+        ("1.005", "1.01"),
+        ("0.125", "0.13"),
+        ("2.664", "2.66"),
+        ("100", "100.00"),
+        (0, "0.00"),
+        ("-1.005", "-1.01"),
+    ],
+)
+def test_fmt_amount_half_up(value: str | int, expected: str) -> None:
+    assert fmt_amount(value) == expected
 
 
 def test_out_of_scope_territory_basque() -> None:

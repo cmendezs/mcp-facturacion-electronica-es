@@ -39,6 +39,7 @@ from mcp_einvoicing_core.signer_client import SignerClient
 from mcp_einvoicing_core.xml_utils import safe_fromstring
 
 from mcp_facturacion_electronica_es._helpers import (
+    VERIFACTU_CONSULTA_ENDPOINTS,
     VERIFACTU_ENDPOINTS,
     aeat_env,
     err,
@@ -62,6 +63,12 @@ _VF_LR_NS = (
 _VF_SF_NS = (
     "https://www2.agenciatributaria.gob.es/static_files/common/internet/dep/aplicaciones"
     "/es/aeat/tike/cont/ws/SuministroInformacion.xsd"
+)
+# ConsultaLR.xsd: ConsultaFactuSistemaFacturacion request root, Cabecera and
+# FiltroConsulta wrappers (their leaf fields are in SuministroInformacion namespace)
+_VF_CONSULTA_NS = (
+    "https://www2.agenciatributaria.gob.es/static_files/common/internet/dep/aplicaciones"
+    "/es/aeat/tike/cont/ws/ConsultaLR.xsd"
 )
 
 _VERIFACTU_VERSION = "1.0"
@@ -110,26 +117,56 @@ def _compute_huella(
     fecha_es: str,
     tipo_factura: str,
     cuota_total: str,
+    importe_total: str,
     fecha_hora_gen: str,
     huella_anterior: str | None,
 ) -> str:
-    """Compute the VERI*FACTU Huella (hash chain link).
+    """Compute the VERI*FACTU RegistroAlta Huella (hash chain link).
 
-    Per HAC/1177/2024 Annex III:
-    SHA-256 of the concatenation of the listed fields, separated by '&'.
-    Returns uppercase hexadecimal (64 characters).
+    Per the confirmed AEAT keyed canonical form (ES-SC-10; see
+    specs/verifactu/documentation/verifactu-technical-reference.md s1):
+    SHA-256 of ``campo=valor`` pairs joined by ``&``, in this exact order.
+    ``Huella`` carries the previous record's huella hex string; for the first
+    (genesis) record in a chain the field is still present with an empty
+    value, not omitted. Returns uppercase hexadecimal (64 characters).
     """
     parts = [
-        emisor_nif,
-        num_serie,
-        fecha_es,
-        tipo_factura,
-        cuota_total,
-        fecha_hora_gen,
+        f"IDEmisorFactura={emisor_nif}",
+        f"NumSerieFactura={num_serie}",
+        f"FechaExpedicionFactura={fecha_es}",
+        f"TipoFactura={tipo_factura}",
+        f"CuotaTotal={cuota_total}",
+        f"ImporteTotal={importe_total}",
+        f"Huella={huella_anterior or ''}",
+        f"FechaHoraHusoGenRegistro={fecha_hora_gen}",
     ]
-    if huella_anterior:
-        parts.append(huella_anterior)
+    raw = "&".join(parts)
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest().upper()
 
+
+def _compute_huella_anulacion(
+    emisor_nif: str,
+    num_serie: str,
+    fecha_es: str,
+    fecha_hora_gen: str,
+    huella_anterior: str | None,
+) -> str:
+    """Compute the Huella for a RegistroAnulacion (cancellation) record.
+
+    Per ES-SC-11 (see specs/verifactu/documentation/verifactu-technical-reference.md
+    s2): a dedicated, reduced field set (no ``TipoFactura``, no ``CuotaTotal``)
+    over the same keyed ``campo=valor&`` layout and normalization rules as the
+    RegistroAlta huella. A prior implementation reused the alta canonical
+    string with ``TipoFactura="ANULACION"`` and ``CuotaTotal="0.00"``; neither
+    value exists in the real anulación field set.
+    """
+    parts = [
+        f"IDEmisorFactura={emisor_nif}",
+        f"NumSerieFactura={num_serie}",
+        f"FechaExpedicionFactura={fecha_es}",
+        f"Huella={huella_anterior or ''}",
+        f"FechaHoraHusoGenRegistro={fecha_hora_gen}",
+    ]
     raw = "&".join(parts)
     return hashlib.sha256(raw.encode("utf-8")).hexdigest().upper()
 
@@ -176,6 +213,7 @@ def _build_registro_alta(
         fecha_es=fecha_es,
         tipo_factura=invoice_type,
         cuota_total=cuota_total,
+        importe_total=importe_total,
         fecha_hora_gen=fecha_hora_gen,
         huella_anterior=previous_hash,
     )
@@ -295,6 +333,45 @@ def _wrap_registro_facturacion(
     return etree.tostring(root, xml_declaration=True, encoding="UTF-8", pretty_print=True)
 
 
+def _build_consulta_lr(
+    nif: str,
+    name: str,
+    fiscal_year: int,
+    period: str,
+    num_serie_factura: str | None = None,
+) -> bytes:
+    """Build a ConsultaFactuSistemaFacturacion request (ConsultaLR.xsd).
+
+    Used by es__query_verifactu_status to re-query a record's EstadoRegistro
+    after a `deferred` (TiempoEsperaEnvio) result from
+    es__submit_verifactu_to_aeat.
+
+    [Inference] Element namespace qualification (Cabecera/FiltroConsulta/
+    PeriodoImputacion/NumSerieFactura in the ConsultaLR namespace; their leaf
+    fields in the SuministroInformacion namespace) was verified by validating
+    the generated XML against the bundled specs/verifactu/xsd/ConsultaLR.xsd
+    locally (2026-08-08). Not yet confirmed against a live AEAT sandbox
+    acknowledgement.
+    """
+    nsmap = {"sfLRC": _VF_CONSULTA_NS, "sf": _VF_SF_NS}
+    root = etree.Element(f"{{{_VF_CONSULTA_NS}}}ConsultaFactuSistemaFacturacion", nsmap=nsmap)
+
+    cab = etree.SubElement(root, f"{{{_VF_CONSULTA_NS}}}Cabecera")
+    etree.SubElement(cab, f"{{{_VF_SF_NS}}}IDVersion").text = _VERIFACTU_VERSION
+    oblig = etree.SubElement(cab, f"{{{_VF_SF_NS}}}ObligadoEmision")
+    etree.SubElement(oblig, f"{{{_VF_SF_NS}}}NombreRazon").text = name
+    etree.SubElement(oblig, f"{{{_VF_SF_NS}}}NIF").text = nif
+
+    filtro = etree.SubElement(root, f"{{{_VF_CONSULTA_NS}}}FiltroConsulta")
+    periodo = etree.SubElement(filtro, f"{{{_VF_CONSULTA_NS}}}PeriodoImputacion")
+    etree.SubElement(periodo, f"{{{_VF_SF_NS}}}Ejercicio").text = str(fiscal_year)
+    etree.SubElement(periodo, f"{{{_VF_SF_NS}}}Periodo").text = period
+    if num_serie_factura:
+        etree.SubElement(filtro, f"{{{_VF_CONSULTA_NS}}}NumSerieFactura").text = num_serie_factura
+
+    return etree.tostring(root, xml_declaration=True, encoding="UTF-8", pretty_print=True)
+
+
 # ---------------------------------------------------------------------------
 # Response parsing helper
 # ---------------------------------------------------------------------------
@@ -332,6 +409,62 @@ def _parse_verifactu_response(raw: str) -> dict[str, Any]:
                 result["retry_after_seconds"] = retry_seconds
             except ValueError:
                 pass
+    except Exception as exc:
+        result["parse_error"] = f"Could not parse AEAT response: {exc}"
+    return result
+
+
+def _parse_consulta_lr_response(raw: str) -> dict[str, Any]:
+    """Parse an AEAT ConsultaLR response (RespuestaConsultaLR.xsd) without
+    echoing raw XML to the LLM (ES-SH-2 pattern).
+
+    Surfaces ResultadoConsulta plus, for each returned record, IDFactura and
+    the EstadoRegistro block (EstadoRegistro: Correcto / AceptadoConErrores /
+    Anulado, TimestampUltimaModificacion, CodigoErrorRegistro,
+    DescripcionErrorRegistro).
+    """
+    result: dict[str, Any] = {}
+    if not raw:
+        return result
+    try:
+        root = safe_fromstring(raw.encode())
+
+        resultado = root.xpath(".//*[local-name()='ResultadoConsulta']")
+        if resultado:
+            result["resultado_consulta"] = resultado[0].text
+
+        registros: list[dict[str, Any]] = []
+        for reg in root.xpath(
+            ".//*[local-name()='RegistroRespuestaConsultaFactuSistemaFacturacion']"
+        ):
+            entry: dict[str, Any] = {}
+
+            id_factura = reg.xpath("./*[local-name()='IDFactura']")
+            if id_factura:
+                for field in ("IDEmisorFactura", "NumSerieFactura", "FechaExpedicionFactura"):
+                    vals = id_factura[0].xpath(f"./*[local-name()='{field}']")
+                    if vals:
+                        entry[field] = vals[0].text
+
+            # EstadoRegistro is the direct-child wrapper block; it contains its
+            # own inner EstadoRegistro leaf with the same local-name; use the
+            # child axis (not //) at each step to avoid matching the wrong one.
+            estado_blocks = reg.xpath("./*[local-name()='EstadoRegistro']")
+            if estado_blocks:
+                block = estado_blocks[0]
+                for field in (
+                    "TimestampUltimaModificacion",
+                    "EstadoRegistro",
+                    "CodigoErrorRegistro",
+                    "DescripcionErrorRegistro",
+                ):
+                    vals = block.xpath(f"./*[local-name()='{field}']")
+                    if vals:
+                        entry[field] = vals[0].text
+
+            registros.append(entry)
+        if registros:
+            result["registros"] = registros
     except Exception as exc:
         result["parse_error"] = f"Could not parse AEAT response: {exc}"
     return result
@@ -413,7 +546,10 @@ TOOL_ES_SUBMIT_VERIFACTU_TO_AEAT = types.Tool(
     name="es__submit_verifactu_to_aeat",
     description=(
         "Envía un registro VERI*FACTU firmado al endpoint en tiempo real de la AEAT mediante MTLS "
-        "(certificado FNMT-RCM). Requiere AEAT_ENV, AEAT_CERTIFICATE_PATH y AEAT_CERTIFICATE_PASSWORD."
+        "(certificado FNMT-RCM). Requiere AEAT_ENV, AEAT_CERTIFICATE_PATH y AEAT_CERTIFICATE_PASSWORD. "
+        "Si la respuesta trae parsed_response.status == 'deferred' (TiempoEsperaEnvio), espere "
+        "retry_after_seconds y llame a es__query_verifactu_status para confirmar el EstadoRegistro "
+        "final antes de encadenar el siguiente registro."
     ),
     inputSchema={
         "type": "object",
@@ -422,6 +558,34 @@ TOOL_ES_SUBMIT_VERIFACTU_TO_AEAT = types.Tool(
             "nif": {"type": "string", "description": "NIF del remitente."},
         },
         "required": ["xml", "nif"],
+    },
+)
+
+TOOL_ES_QUERY_VERIFACTU_STATUS = types.Tool(
+    name="es__query_verifactu_status",
+    description=(
+        "Consulta el EstadoRegistro de un registro VERI*FACTU ya enviado "
+        "(ConsultaFactuSistemaFacturacion / ConsultaLR.xsd). Use esta tool tras un resultado "
+        "'deferred' de es__submit_verifactu_to_aeat, esperando retry_after_seconds, para "
+        "confirmar el estado final (Correcto / AceptadoConErrores / Anulado) antes de "
+        "encadenar el siguiente registro. Requiere AEAT_ENV, AEAT_CERTIFICATE_PATH y "
+        "AEAT_CERTIFICATE_PASSWORD, igual que es__submit_verifactu_to_aeat."
+    ),
+    inputSchema={
+        "type": "object",
+        "properties": {
+            "nif": {"type": "string", "description": "NIF del obligado a la emisión (ObligadoEmision)."},
+            "name": {"type": "string", "description": "Nombre/razón social del obligado a la emisión."},
+            "invoice_date": {
+                "type": "string",
+                "description": "Fecha de la factura consultada, YYYY-MM-DD (determina PeriodoImputacion).",
+            },
+            "num_serie_factura": {
+                "type": "string",
+                "description": "NumSerieFactura a filtrar (omitir para consultar todo el período).",
+            },
+        },
+        "required": ["nif", "name", "invoice_date"],
     },
 )
 
@@ -790,6 +954,92 @@ async def handle_es_submit_verifactu_to_aeat(
         return err(str(exc))
 
 
+async def handle_es_query_verifactu_status(
+    arguments: dict[str, Any],
+) -> list[types.TextContent]:
+    try:
+        nif = arguments.get("nif", "")
+        name = arguments.get("name", "")
+        invoice_date = arguments.get("invoice_date", "")
+        num_serie_factura: str | None = arguments.get("num_serie_factura") or None
+
+        for field_name, val in [("nif", nif), ("name", name), ("invoice_date", invoice_date)]:
+            if not val:
+                return err(f"{field_name} is required", "MISSING_PARAM")
+
+        fiscal_year = int(invoice_date[:4])
+        period = invoice_date[5:7] if len(invoice_date) >= 7 else "01"
+
+        xml_bytes = _build_consulta_lr(
+            nif=nif,
+            name=name,
+            fiscal_year=fiscal_year,
+            period=period,
+            num_serie_factura=num_serie_factura,
+        )
+
+        env = aeat_env()
+        base_url = VERIFACTU_CONSULTA_ENDPOINTS[env]
+
+        if SignerClient.is_configured():
+            signer = SignerClient.from_env()
+            result = await signer.mtls_submit_files(
+                base_url,
+                [("xml", "consulta.xml", xml_bytes, "application/xml")],
+            )
+            parsed = _parse_consulta_lr_response(result.get("body", ""))
+            return ok(
+                {
+                    "status_code": result["status_code"],
+                    "environment": env,
+                    "parsed_response": parsed,
+                }
+            )
+
+        from mcp_einvoicing_core.http_client import AuthMode, BaseEInvoicingClient  # noqa: PLC0415
+
+        cert_path = aeat_settings.certificate_path
+        cert_password = aeat_settings.certificate_password
+        if not cert_path:
+            return err(
+                "AEAT_CERTIFICATE_PATH no está configurado. "
+                "Arranque el servicio de firma (EINVOICING_SIGNER_SOCKET) "
+                "o proporcione la ruta al certificado FNMT-RCM PKCS#12.",
+                "MISSING_CONFIG",
+            )
+        logger.warning(
+            "es__query_verifactu_status: signer microservice not configured. "
+            "cert material is in the MCP process (security risk). "
+            "Set EINVOICING_SIGNER_SOCKET and EINVOICING_SIGNER_TOKEN."
+        )
+
+        client = BaseEInvoicingClient(
+            base_url=base_url,
+            auth_mode=AuthMode.MTLS,
+            cert_path=cert_path,
+            cert_password=cert_password,
+        )
+        response = await client._request(
+            "POST",
+            "",
+            data=None,
+            json=None,
+            files={"xml": ("consulta.xml", xml_bytes, "application/xml")},
+        )
+        parsed = _parse_consulta_lr_response(response.text)
+        return ok(
+            {
+                "status_code": response.status_code,
+                "environment": env,
+                "parsed_response": parsed,
+            }
+        )
+
+    except Exception as exc:
+        logger.exception("es__query_verifactu_status failed")
+        return err(str(exc))
+
+
 async def handle_es_generate_qr_verifactu(
     arguments: dict[str, Any],
 ) -> list[types.TextContent]:
@@ -821,7 +1071,7 @@ async def handle_es_generate_qr_verifactu(
             f"?nif={nif}&numserie={invoice_number}&fecha={fecha_es}&importe={importe}"
         )
 
-        png_b64 = generate_qr_png_base64(verification_url, size_px=size_px)
+        png_b64 = generate_qr_png_base64(verification_url, size_px=size_px, error_correction="M")
 
         logger.info("VERI*FACTU QR generated for %s / %s", nif, invoice_number)
 
@@ -834,6 +1084,14 @@ async def handle_es_generate_qr_verifactu(
                     "VERIFACTU",
                 ],
                 "size_px": size_px,
+                "physical_spec": {
+                    "min_size_mm": "30x40",
+                    "symbology": "ISO/IEC 18004",
+                    "error_correction_level": "M",
+                    "source": (
+                        "specs/verifactu/documentation/verifactu-technical-reference.md s3"
+                    ),
+                },
             }
         )
 
@@ -906,13 +1164,12 @@ async def handle_es_cancel_verifactu_record(
 
         _sub(ra, "FechaHoraHusoGenRegistro", fecha_hora_gen)
 
-        # Huella for the anulacion record itself
-        huella = _compute_huella(
+        # Huella for the anulacion record itself (ES-SC-11: dedicated field set,
+        # no TipoFactura/CuotaTotal, see _compute_huella_anulacion docstring)
+        huella = _compute_huella_anulacion(
             emisor_nif=issuer_nif,
             num_serie=num_serie,
             fecha_es=fecha_es,
-            tipo_factura="ANULACION",
-            cuota_total="0.00",
             fecha_hora_gen=fecha_hora_gen,
             huella_anterior=previous_hash,
         )

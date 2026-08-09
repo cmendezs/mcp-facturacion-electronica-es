@@ -78,6 +78,28 @@ class AEATResponseType(StrEnum):
     sii = "sii"
 
 
+class SpanishTaxType(StrEnum):
+    """Spanish indirect tax types (Facturae TaxTypeCode code list).
+
+    IVA applies in mainland Spain and the Balearic Islands. IGIC (Canary
+    Islands) and IPSI (Ceuta/Melilla) are separate, mutually exclusive
+    indirect taxes that replace IVA in those territories.
+    """
+
+    IVA = "IVA"
+    IPSI = "IPSI"
+    IGIC = "IGIC"
+
+
+#: Facturae TaxTypeCode values for each SpanishTaxType.
+#: Source: specs/facturae/xsd/Facturaev3_2_2.xml TaxTypeCode enumeration.
+FACTURAE_TAX_TYPE_CODES: dict[SpanishTaxType, str] = {
+    SpanishTaxType.IVA: "01",
+    SpanishTaxType.IPSI: "02",
+    SpanishTaxType.IGIC: "03",
+}
+
+
 # ---------------------------------------------------------------------------
 # SpanishInvoice — ES validation wrapper (extends core InvoiceDocument)
 # Required by audit CHECK 3 to verify EN 16931 mandatory field coverage.

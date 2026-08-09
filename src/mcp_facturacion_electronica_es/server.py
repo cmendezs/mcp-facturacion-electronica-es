@@ -53,11 +53,13 @@ from mcp_facturacion_electronica_es.tools.verifactu import (
     TOOL_ES_CANCEL_VERIFACTU_RECORD,
     TOOL_ES_GENERATE_QR_VERIFACTU,
     TOOL_ES_GENERATE_VERIFACTU_RECORD,
+    TOOL_ES_QUERY_VERIFACTU_STATUS,
     TOOL_ES_SUBMIT_VERIFACTU_TO_AEAT,
     TOOL_ES_VALIDATE_VERIFACTU_RECORD,
     handle_es_cancel_verifactu_record,
     handle_es_generate_qr_verifactu,
     handle_es_generate_verifactu_record,
+    handle_es_query_verifactu_status,
     handle_es_submit_verifactu_to_aeat,
     handle_es_validate_verifactu_record,
 )
@@ -71,6 +73,7 @@ _ALL_TOOLS: list[types.Tool] = [
     TOOL_ES_GENERATE_VERIFACTU_RECORD,
     TOOL_ES_VALIDATE_VERIFACTU_RECORD,
     TOOL_ES_SUBMIT_VERIFACTU_TO_AEAT,
+    TOOL_ES_QUERY_VERIFACTU_STATUS,
     TOOL_ES_GENERATE_QR_VERIFACTU,
     TOOL_ES_CANCEL_VERIFACTU_RECORD,
     # Facturae / FACe
@@ -98,6 +101,7 @@ _TOOL_HANDLERS: dict[str, Any] = {
     "es__generate_verifactu_record": handle_es_generate_verifactu_record,
     "es__validate_verifactu_record": handle_es_validate_verifactu_record,
     "es__submit_verifactu_to_aeat": handle_es_submit_verifactu_to_aeat,
+    "es__query_verifactu_status": handle_es_query_verifactu_status,
     "es__generate_qr_verifactu": handle_es_generate_qr_verifactu,
     "es__cancel_verifactu_record": handle_es_cancel_verifactu_record,
     # Facturae / FACe

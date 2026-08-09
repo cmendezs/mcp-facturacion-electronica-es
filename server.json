@@ -6,12 +6,12 @@
     "url": "https://github.com/cmendezs/mcp-facturacion-electronica-es",
     "source": "github"
   },
-  "version": "0.5.0",
+  "version": "0.6.0",
   "packages": [
     {
       "registryType": "pypi",
       "identifier": "mcp-facturacion-electronica-es",
-      "version": "0.5.0",
+      "version": "0.6.0",
       "transport": {
         "type": "stdio"
       },
@@ -24,7 +24,7 @@
         },
         {
           "name": "AEAT_CERTIFICATE_PATH",
-          "description": "Filesystem path to the FNMT-RCM PKCS#12 certificate (.p12 / .pfx) used for MTLS submission to AEAT (VERI*FACTU and SII).",
+          "description": "Filesystem path to the FNMT-RCM PKCS#12 certificate (.p12 / .pfx) used for MTLS submission to AEAT (VERI*FACTU and SII) and for JWS-signed FACe submission.",
           "isRequired": false,
           "format": "string"
         },
@@ -43,18 +43,6 @@
         {
           "name": "FACE_ENV",
           "description": "Target environment for FACe API: 'sandbox' or 'production'.",
-          "isRequired": false,
-          "format": "string"
-        },
-        {
-          "name": "FACE_CLIENT_ID",
-          "description": "JWT client ID for FACe B2B REST API v2.",
-          "isRequired": false,
-          "format": "string"
-        },
-        {
-          "name": "FACE_CLIENT_SECRET",
-          "description": "JWT client secret for FACe B2B REST API v2.",
           "isRequired": false,
           "format": "string"
         },

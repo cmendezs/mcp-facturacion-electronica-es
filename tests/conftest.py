@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import datetime
 from decimal import Decimal
+from pathlib import Path
 
 import pytest
 from mcp_einvoicing_core.models import (
@@ -13,6 +15,50 @@ from mcp_einvoicing_core.models import (
     TaxIdentifier,
     VATSummary,
 )
+
+
+def _generate_test_p12(path: Path, password: bytes | None = b"test") -> None:
+    """Write a minimal self-signed RSA cert as PKCS#12 to *path*."""
+    from cryptography import x509
+    from cryptography.hazmat.primitives import hashes, serialization
+    from cryptography.hazmat.primitives.asymmetric import rsa
+    from cryptography.hazmat.primitives.serialization import pkcs12
+    from cryptography.x509.oid import NameOID
+
+    key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    subject = issuer = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "Test ES Client")])
+    cert = (
+        x509.CertificateBuilder()
+        .subject_name(subject)
+        .issuer_name(issuer)
+        .public_key(key.public_key())
+        .serial_number(x509.random_serial_number())
+        .not_valid_before(datetime.datetime.now(datetime.UTC))
+        .not_valid_after(
+            datetime.datetime.now(datetime.UTC) + datetime.timedelta(days=365)
+        )
+        .sign(key, hashes.SHA256())
+    )
+    p12_bytes = pkcs12.serialize_key_and_certificates(
+        name=b"test",
+        key=key,
+        cert=cert,
+        cas=None,
+        encryption_algorithm=(
+            serialization.BestAvailableEncryption(password)
+            if password
+            else serialization.NoEncryption()
+        ),
+    )
+    path.write_bytes(p12_bytes)
+
+
+@pytest.fixture()
+def p12_path(tmp_path: Path) -> Path:
+    """Return path to a temporary self-signed PKCS#12 file (password: 'test')."""
+    p = tmp_path / "es_test_cert.p12"
+    _generate_test_p12(p, password=b"test")
+    return p
 
 
 def _make_party(nif: str, name: str, city: str = "Madrid") -> InvoiceParty:

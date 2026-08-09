@@ -196,6 +196,99 @@ def test_facturae_policy_hash_set() -> None:
     assert "sha1" in FACTURAE_POLICY_HASH_ALGORITHM
 
 
+# ---------------------------------------------------------------------------
+# ES-TL-9 / ES-TL-10 / ES-TL-11: tax type, Recargo de Equivalencia, IRPF
+# ---------------------------------------------------------------------------
+
+
+def test_facturae_tax_type_igic(minimal_invoice) -> None:
+    xml_bytes = build_facturae_xml(minimal_invoice, tax_type="IGIC")
+    root = etree.fromstring(xml_bytes)
+    ns = {"fe": _FACTURAE_NS}
+    codes = root.findall(".//fe:TaxTypeCode", ns)
+    assert len(codes) >= 1
+    assert all(c.text == "03" for c in codes)
+
+
+def test_facturae_tax_type_ipsi(minimal_invoice) -> None:
+    xml_bytes = build_facturae_xml(minimal_invoice, tax_type="IPSI")
+    root = etree.fromstring(xml_bytes)
+    ns = {"fe": _FACTURAE_NS}
+    codes = root.findall(".//fe:TaxTypeCode", ns)
+    assert all(c.text == "02" for c in codes)
+
+
+def test_facturae_tax_type_default_iva(minimal_invoice) -> None:
+    xml_bytes = build_facturae_xml(minimal_invoice)
+    root = etree.fromstring(xml_bytes)
+    ns = {"fe": _FACTURAE_NS}
+    code = root.find(".//fe:TaxesOutputs/fe:Tax/fe:TaxTypeCode", ns)
+    assert code is not None
+    assert code.text == "01"
+
+
+def test_facturae_recargo_equivalencia(minimal_invoice) -> None:
+    from decimal import Decimal as D
+
+    xml_bytes = build_facturae_xml(
+        minimal_invoice, recargo_equivalencia_rate=D("5.2")
+    )
+    root = etree.fromstring(xml_bytes)
+    ns = {"fe": _FACTURAE_NS}
+    rate = root.find(".//fe:EquivalenceSurcharge", ns)
+    amount = root.find(".//fe:EquivalenceSurchargeAmount/fe:TotalAmount", ns)
+    assert rate is not None and rate.text == "5.20"
+    assert amount is not None and amount.text == "52.00"
+    total_tax_outputs = root.find(".//fe:TotalTaxOutputs", ns)
+    assert total_tax_outputs.text == "262.00"
+    invoice_total = root.find(".//fe:InvoiceTotal", ns)
+    assert invoice_total.text == "1262.00"
+
+
+def test_facturae_irpf_rate_taxes_withheld_block(minimal_invoice) -> None:
+    from decimal import Decimal as D
+
+    xml_bytes = build_facturae_xml(
+        minimal_invoice, irpf_amount=D("150.00"), irpf_rate=D("15.00")
+    )
+    root = etree.fromstring(xml_bytes)
+    ns = {"fe": _FACTURAE_NS}
+    withheld = root.find(".//fe:TaxesWithheld/fe:Tax", ns)
+    assert withheld is not None
+    assert withheld.find("fe:TaxTypeCode", ns).text == "04"
+    assert withheld.find("fe:TaxRate", ns).text == "15.00"
+    assert withheld.find("fe:TaxableBase/fe:TotalAmount", ns).text == "1000.00"
+    assert withheld.find("fe:TaxAmount/fe:TotalAmount", ns).text == "150.00"
+
+
+def test_facturae_no_taxes_withheld_block_without_irpf(minimal_invoice) -> None:
+    xml_bytes = build_facturae_xml(minimal_invoice)
+    root = etree.fromstring(xml_bytes)
+    ns = {"fe": _FACTURAE_NS}
+    assert root.find(".//fe:TaxesWithheld", ns) is None
+
+
+@pytest.mark.asyncio
+async def test_facturae_igic_recargo_irpf_xsd_valid(minimal_invoice) -> None:
+    """Combined IGIC + Recargo + IRPF output must still XSD-validate."""
+    from decimal import Decimal as D
+
+    from mcp_facturacion_electronica_es.tools.facturae import (
+        handle_es_validate_facturae_schema,
+    )
+
+    xml_bytes = build_facturae_xml(
+        minimal_invoice,
+        tax_type="IGIC",
+        recargo_equivalencia_rate=D("5.2"),
+        irpf_amount=D("150.00"),
+        irpf_rate=D("15.00"),
+    )
+    result = await handle_es_validate_facturae_schema({"xml": xml_bytes.decode("utf-8")})
+    data = json.loads(result[0].text)
+    assert data["valid"] is True, data["errors"]
+
+
 def test_facturae_line_tax_decimal_precision(minimal_invoice) -> None:
     """Tax amount must use Decimal division, not float."""
     from decimal import Decimal as D
@@ -210,3 +303,109 @@ def test_facturae_line_tax_decimal_precision(minimal_invoice) -> None:
     for ta in tax_amounts:
         val = D(ta.text)
         assert val == val.quantize(D("0.01"))
+
+
+# ---------------------------------------------------------------------------
+# ES-LC-14: FACe JWS authentication, ES-SH-7: masked FACe responses
+# ---------------------------------------------------------------------------
+
+
+def test_build_face_client_missing_cert_path_raises(monkeypatch: pytest.MonkeyPatch) -> None:
+    from mcp_facturacion_electronica_es.config import aeat_settings
+    from mcp_facturacion_electronica_es.tools.facturae import _build_face_client
+
+    monkeypatch.setattr(aeat_settings, "certificate_path", None)
+    with pytest.raises(Exception, match="AEAT_CERTIFICATE_PATH"):
+        _build_face_client("https://se-api-face.redsara.es")
+
+
+def test_build_face_client_uses_jws_auth(p12_path, monkeypatch: pytest.MonkeyPatch) -> None:
+    import base64
+    import hashlib
+
+    from mcp_einvoicing_core.digital_signature import load_certificate_der
+    from mcp_einvoicing_core.http_client import AuthMode
+
+    from mcp_facturacion_electronica_es.config import aeat_settings
+    from mcp_facturacion_electronica_es.tools.facturae import _build_face_client
+
+    monkeypatch.setattr(aeat_settings, "certificate_path", str(p12_path))
+    monkeypatch.setattr(aeat_settings, "certificate_password", "test")
+
+    client = _build_face_client("https://se-api-face.redsara.es")
+    assert client._auth_mode == AuthMode.JWS
+    assert client._jws_config is not None
+    assert client._jws_config.ttl_seconds == 300
+
+    expected_username = hashlib.sha1(
+        base64.b64encode(load_certificate_der(str(p12_path), "test"))
+    ).hexdigest()
+    assert client._jws_config.extra_claims["username"] == expected_username
+
+
+def test_parse_face_response_masks_raw_body() -> None:
+    from mcp_facturacion_electronica_es.tools.facturae import _parse_face_response
+
+    class _FakeResponse:
+        status_code = 201
+        headers = {"content-type": "application/json"}
+
+        def json(self):
+            return {
+                "codigo": "1200",
+                "descripcion": "Registrada",
+                "numeroRegistro": "REG-123",
+                "internalSecret": "should-never-appear",
+            }
+
+    result = _parse_face_response(_FakeResponse())
+    assert result == {
+        "status_code": 201,
+        "codigo": "1200",
+        "descripcion": "Registrada",
+        "numeroRegistro": "REG-123",
+    }
+    assert "internalSecret" not in result
+    assert "internalSecret" not in json.dumps(result)
+
+
+@pytest.mark.asyncio
+async def test_handle_submit_to_face_masks_response(
+    minimal_facturae_xml, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import mcp_einvoicing_core.confirmation as confirmation_module
+
+    from mcp_facturacion_electronica_es.tools import facturae as facturae_module
+
+    monkeypatch.setattr(confirmation_module, "_HITL_DISABLED", True)
+
+    class _FakeResponse:
+        status_code = 201
+        headers = {"content-type": "application/json"}
+
+        def json(self):
+            return {
+                "codigo": "1200",
+                "descripcion": "Registrada",
+                "numeroRegistro": "REG-123",
+                "secretToken": "should-never-leak",
+            }
+
+    class _FakeClient:
+        async def _request(self, *args, **kwargs):
+            return _FakeResponse()
+
+    monkeypatch.setattr(facturae_module, "_build_face_client", lambda base_url: _FakeClient())
+
+    result = await facturae_module.handle_es_submit_to_face(
+        {
+            "xml": minimal_facturae_xml,
+            "administrative_unit": "U001",
+            "accounting_office": "O001",
+            "management_body": "G001",
+        }
+    )
+    data = json.loads(result[0].text)
+    assert "error" not in data
+    assert data["codigo"] == "1200"
+    assert "secretToken" not in json.dumps(data)

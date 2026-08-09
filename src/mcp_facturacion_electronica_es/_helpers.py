@@ -8,7 +8,7 @@ from __future__ import annotations
 import json
 import logging
 import os
-from decimal import Decimal
+from decimal import ROUND_HALF_UP, Decimal
 from types import MappingProxyType
 from typing import Any
 
@@ -68,8 +68,13 @@ def err(message: str, code: str | None = None) -> list[types.TextContent]:
 
 
 def fmt_amount(value: Decimal | float | int | str) -> str:
-    """Return a monetary value formatted to exactly 2 decimal places."""
-    return f"{Decimal(str(value)):.2f}"
+    """Return a monetary value formatted to exactly 2 decimal places (HALF_UP).
+
+    Per Factura-e spec s4.1 (document/line totals, 2 decimal places) and the
+    AEAT VeriFactu huella normalization rules, half-cent amounts round HALF_UP
+    (e.g. 2.665 -> 2.67), not Python's Decimal-context-default HALF_EVEN.
+    """
+    return str(Decimal(str(value)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP))
 
 
 def fmt_date_es(date_iso: str) -> str:
@@ -123,6 +128,20 @@ VERIFACTU_ENDPOINTS: MappingProxyType[str, str] = MappingProxyType(
         # [NEED: verify both URLs against AEAT VeriFactu technical guide PDF
         #  (not included in bundled specs/ as of 2026-06-26; XSD namespace path
         #  /tike/cont/ws/ is consistent with the TIKE-CONT path used here)]
+    }
+)
+
+#: VERI*FACTU consulta (ConsultaFactuSistemaFacturacion / ConsultaLR.xsd) endpoints.
+#: [NEED: verify: no VeriFactu WSDL is bundled in specs/ (only XSDs); the exact
+#:  URL segment for the consulta operation has not been confirmed. Reuses the
+#:  same TIKE-CONT service base path as VERIFACTU_ENDPOINTS by convention.]
+VERIFACTU_CONSULTA_ENDPOINTS: MappingProxyType[str, str] = MappingProxyType(
+    {
+        "sandbox": ("https://prewww2.aeat.es/wlpl/TIKE-CONT/ws/SistemaFacturacion/ConsultaLR"),
+        "production": (
+            "https://www2.agenciatributaria.gob.es"
+            "/wlpl/TIKE-CONT/ws/SistemaFacturacion/ConsultaLR"
+        ),
     }
 )
 

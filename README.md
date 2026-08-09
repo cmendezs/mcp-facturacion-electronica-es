@@ -188,6 +188,32 @@ chained to the current fingerprint sequence.
 
 ---
 
+#### `es__query_verifactu_status`
+
+Queries the `EstadoRegistro` of an already-submitted VERI\*FACTU record
+(`ConsultaFactuSistemaFacturacion` / `ConsultaLR.xsd`). Use after a `deferred` result from
+`es__submit_verifactu_to_aeat`: wait `retry_after_seconds`, then call this tool to confirm
+the final state (`Correcto` / `AceptadoConErrores` / `Anulado`) before chaining the next
+record. Requires `AEAT_ENV`, `AEAT_CERTIFICATE_PATH`, and `AEAT_CERTIFICATE_PASSWORD`, same
+as `es__submit_verifactu_to_aeat`.
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `nif` | `string` | Yes | NIF of the `ObligadoEmision` |
+| `name` | `string` | Yes | Name/razón social of the `ObligadoEmision` |
+| `invoice_date` | `string` | Yes | Invoice date being queried, `YYYY-MM-DD` (determines `PeriodoImputacion`) |
+| `num_serie_factura` | `string` | No | `NumSerieFactura` filter (omit to query the whole period) |
+
+```json
+{ "tool": "es__query_verifactu_status", "arguments": { "nif": "B12345678", "name": "Empresa SL", "invoice_date": "2025-03-15", "num_serie_factura": "2025-0042" } }
+```
+
+> ⚠️ Pending regulatory confirmation: root element name (`ConsultaFactuSistemaFacturacion`)
+> confirmed against the bundled XSD; response parsing not yet validated against a live AEAT
+> sandbox acknowledgement.
+
+---
+
 ### Facturae / FACe
 
 #### `es__generate_facturae_xml`
@@ -199,6 +225,10 @@ Generates a Facturae 3.2.2 compliant XML invoice for B2G submission. Uses
 |---|---|---|---|
 | `invoice` | `InvoiceDocument` | Yes | Core invoice model |
 | `schema_version` | `string` | No | Facturae schema version (default: `"3.2.2"`) |
+| `tax_type` | `string` | No | Indirect tax regime: `IVA` (peninsula/Baleares), `IPSI` (Ceuta/Melilla), or `IGIC` (Canarias). Mixing tax types on one invoice is not supported. Default: `"IVA"` |
+| `recargo_equivalencia_rate` | `number` | No | Recargo de Equivalencia rate (%), if applicable |
+| `recargo_equivalencia_amount` | `number` | No | Explicit Recargo de Equivalencia amount; if omitted, computed as `base_imponible * recargo_equivalencia_rate / 100` |
+| `irpf_rate` | `number` | No | IRPF withholding rate (%), emitted in `TaxesWithheld` |
 
 ```json
 { "tool": "es__generate_facturae_xml", "arguments": { "invoice": { "date": "2025-03-15", "number": "2025-0042", "seller": { "tax_id": { "country_code": "ES", "identifier": "B12345678" }, "name": "Proveedor SL" }, "buyer": { "tax_id": { "country_code": "ES", "identifier": "S2800000D" }, "name": "Ayuntamiento de Madrid" }, "lines": [{ "line_number": 1, "description": "Suministro", "quantity": 5, "unit_price": 200.00, "vat_rate": 21.0 }] } } }
@@ -217,11 +247,13 @@ Candidate for promotion to `mcp-einvoicing-core` (XAdES signing, score 3/3).
 |---|---|---|---|
 | `xml` | `string` | Yes | Unsigned Facturae XML |
 | `cert_path` | `string` | Yes | Path to PKCS#12 certificate (`.p12` / `.pfx`) |
-| `cert_password` | `string` | Yes | Certificate password |
 | `signature_policy_id` | `string` | No | Signature policy OID (default: Facturae standard) |
 
+The certificate password is not accepted as a tool argument (ES-SH-6, avoids plaintext
+credential exposure in LLM context/logs); set `AEAT_CERTIFICATE_PASSWORD` instead.
+
 ```json
-{ "tool": "es__sign_facturae_xades", "arguments": { "xml": "<Facturae>...</Facturae>", "cert_path": "/certs/empresa.p12", "cert_password": "s3cr3t" } }
+{ "tool": "es__sign_facturae_xades", "arguments": { "xml": "<Facturae>...</Facturae>", "cert_path": "/certs/empresa.p12" } }
 ```
 
 > ⚠️ Pending regulatory confirmation
@@ -231,7 +263,9 @@ Candidate for promotion to `mcp-einvoicing-core` (XAdES signing, score 3/3).
 #### `es__submit_to_face`
 
 Submits a signed Facturae XML to FACe (Punto General de Entrada de Facturas Electronicas)
-via the FACe B2B REST API v2. Requires OAuth2 (`FACE_CLIENT_ID` / `FACE_CLIENT_SECRET`).
+via the FACe integrator REST API. Authenticates with a JWS-signed JWT (RS256, `x5c` header)
+minted from the same `AEAT_CERTIFICATE_PATH` / `AEAT_CERTIFICATE_PASSWORD` certificate used
+for VERI\*FACTU/SII, per `FACe-manual-api-integradores.pdf` s2.3.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
@@ -251,7 +285,9 @@ via the FACe B2B REST API v2. Requires OAuth2 (`FACE_CLIENT_ID` / `FACE_CLIENT_S
 #### `es__get_face_invoice_status`
 
 Queries the processing status of an invoice on FACe. Returns standard status codes:
-1200 (Registered), 2400 (Acknowledged), 3100 (Rejected), 4100 (Paid).
+1200 (Registered), 2400 (Acknowledged), 3100 (Rejected), 4100 (Paid). The raw FACe
+response is never echoed to the LLM; only a structured, non-sensitive subset
+(`status_code`, `codigo`, `descripcion`, `numeroRegistro`) is returned (ES-SH-7).
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
@@ -588,8 +624,10 @@ All configuration is done through environment variables or a `.env` file.
 | Variable | Description | Required |
 |---|---|---|
 | `FACE_ENV` | `sandbox` or `production` | Yes |
-| `FACE_CLIENT_ID` | OAuth2 client ID | Yes |
-| `FACE_CLIENT_SECRET` | OAuth2 client secret | Yes |
+
+FACe authenticates via JWS using the same `AEAT_CERTIFICATE_PATH` / `AEAT_CERTIFICATE_PASSWORD`
+certificate as VERI\*FACTU/SII (see the AEAT section above); no separate FACe credentials are
+required.
 
 ### TicketBAI
 

@@ -29,8 +29,6 @@ class AEATSettings(BaseSettings):
     environment: str = Field(default="sandbox", alias="AEAT_ENV")
     certificate_path: str | None = Field(default=None, alias="AEAT_CERTIFICATE_PATH")
     certificate_password: str | None = Field(default=None, alias="AEAT_CERTIFICATE_PASSWORD")
-    face_client_id: str | None = Field(default=None, alias="FACE_CLIENT_ID")
-    face_client_secret: str | None = Field(default=None, alias="FACE_CLIENT_SECRET")
     face_environment: str = Field(default="sandbox", alias="FACE_ENV")
 
     model_config = {
