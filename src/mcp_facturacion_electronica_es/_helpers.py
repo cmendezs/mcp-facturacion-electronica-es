@@ -146,39 +146,47 @@ VERIFACTU_CONSULTA_ENDPOINTS: MappingProxyType[str, str] = MappingProxyType(
 )
 
 #: SII issued-invoice submission endpoints (immutable).
-#: Each environment exposes a primary + secondary host for failover.
-#: Source: specs/sii/schemas/SuministroFactEmitidas.wsdl
+#: The www10 host is not a failover secondary: its WSDL port name
+#: ("SuministroFactEmitidasSello") and the AEAT integration guide identify it as
+#: the company-seal-certificate (Certificado de Sello Electrónico) variant of the
+#: same operation, addressed separately from the www1 port used with a personal/
+#: representative certificate. Callers must pick "primary" or "sello" based on
+#: which certificate type is presented, not as a primary/failover pair.
+#: Source: specs/sii/schemas/SuministroFactEmitidas.wsdl (wsdl:port names)
 SII_ISSUED_ENDPOINTS: MappingProxyType[str, MappingProxyType[str, str]] = MappingProxyType(
     {
         "sandbox": MappingProxyType(
             {
                 "primary": "https://prewww1.aeat.es/wlpl/SSII-FACT/ws/fe/SiiFactFEV1SOAP",
-                "secondary": "https://prewww10.aeat.es/wlpl/SSII-FACT/ws/fe/SiiFactFEV1SOAP",
+                "sello": "https://prewww10.aeat.es/wlpl/SSII-FACT/ws/fe/SiiFactFEV1SOAP",
             }
         ),
         "production": MappingProxyType(
             {
                 "primary": "https://www1.agenciatributaria.gob.es/wlpl/SSII-FACT/ws/fe/SiiFactFEV1SOAP",
-                "secondary": "https://www10.agenciatributaria.gob.es/wlpl/SSII-FACT/ws/fe/SiiFactFEV1SOAP",
+                "sello": "https://www10.agenciatributaria.gob.es/wlpl/SSII-FACT/ws/fe/SiiFactFEV1SOAP",
             }
         ),
     }
 )
 
 #: SII received-invoice submission endpoints (immutable).
-#: Source: specs/sii/schemas/SuministroFactRecibidas.wsdl
+#: The www10 host is not a failover secondary: its WSDL port name
+#: ("SuministroFactRecibidasSello") identifies it as the company-seal-certificate
+#: variant of the same operation, mirroring SII_ISSUED_ENDPOINTS above.
+#: Source: specs/sii/schemas/SuministroFactRecibidas.wsdl (wsdl:port names)
 SII_RECEIVED_ENDPOINTS: MappingProxyType[str, MappingProxyType[str, str]] = MappingProxyType(
     {
         "sandbox": MappingProxyType(
             {
                 "primary": "https://prewww1.aeat.es/wlpl/SSII-FACT/ws/fr/SiiFactFRV1SOAP",
-                "secondary": "https://prewww10.aeat.es/wlpl/SSII-FACT/ws/fr/SiiFactFRV1SOAP",
+                "sello": "https://prewww10.aeat.es/wlpl/SSII-FACT/ws/fr/SiiFactFRV1SOAP",
             }
         ),
         "production": MappingProxyType(
             {
                 "primary": "https://www1.agenciatributaria.gob.es/wlpl/SSII-FACT/ws/fr/SiiFactFRV1SOAP",
-                "secondary": "https://www10.agenciatributaria.gob.es/wlpl/SSII-FACT/ws/fr/SiiFactFRV1SOAP",
+                "sello": "https://www10.agenciatributaria.gob.es/wlpl/SSII-FACT/ws/fr/SiiFactFRV1SOAP",
             }
         ),
     }

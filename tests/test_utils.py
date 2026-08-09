@@ -246,7 +246,7 @@ def test_sii_endpoints_match_bundled_wsdl() -> None:
     assert SII_ISSUED_ENDPOINTS["production"]["primary"] == (
         "https://www1.agenciatributaria.gob.es/wlpl/SSII-FACT/ws/fe/SiiFactFEV1SOAP"
     )
-    assert SII_ISSUED_ENDPOINTS["production"]["secondary"] == (
+    assert SII_ISSUED_ENDPOINTS["production"]["sello"] == (
         "https://www10.agenciatributaria.gob.es/wlpl/SSII-FACT/ws/fe/SiiFactFEV1SOAP"
     )
     assert SII_ISSUED_ENDPOINTS["sandbox"]["primary"] == (
@@ -260,6 +260,6 @@ def test_sii_endpoints_match_bundled_wsdl() -> None:
     )
     for env in ("sandbox", "production"):
         assert "primary" in SII_ISSUED_ENDPOINTS[env]
-        assert "secondary" in SII_ISSUED_ENDPOINTS[env]
+        assert "sello" in SII_ISSUED_ENDPOINTS[env]
         assert "primary" in SII_RECEIVED_ENDPOINTS[env]
-        assert "secondary" in SII_RECEIVED_ENDPOINTS[env]
+        assert "sello" in SII_RECEIVED_ENDPOINTS[env]

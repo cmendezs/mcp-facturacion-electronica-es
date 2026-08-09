@@ -41,6 +41,15 @@ mcp-publisher publish
 
 ## Changelog
 
+### [0.6.1] - 2026-08-09
+#### Fixed
+- **[ES-LC-10]** `SII_ISSUED_ENDPOINTS`/`SII_RECEIVED_ENDPOINTS` `"secondary"` key
+  renamed to `"sello"`. The www10/prewww10 host is not a failover secondary for
+  www1/prewww1: the bundled WSDLs name its ports `SuministroFactEmitidasSello` /
+  `SuministroFactRecibidasSello`, i.e. the company-seal-certificate variant of the
+  same operation. Documentation/labeling only — `sii.py` only ever reads
+  `endpoints[env]["primary"]`, so there is no behavior change.
+
 ### [0.6.0] - 2026-08-09
 #### Added
 - **[ES-LC-10]** `es__query_verifactu_status` tool: queries `EstadoRegistro` for an
