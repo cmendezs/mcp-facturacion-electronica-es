@@ -41,6 +41,45 @@ mcp-publisher publish
 
 ## Changelog
 
+### [0.6.0] - 2026-08-09
+#### Added
+- **[ES-LC-10]** `es__query_verifactu_status` tool: queries `EstadoRegistro` for an
+  already-submitted VERI\*FACTU record (`ConsultaFactuSistemaFacturacion` /
+  `ConsultaLR.xsd`), for use after a `deferred` result from
+  `es__submit_verifactu_to_aeat`.
+- **[ES-TL-9]** `tax_type` (IVA/IPSI/IGIC) derivation for Facturae generation.
+- **[ES-TL-10]** Recargo de Equivalencia support in Facturae (`recargo_equivalencia_rate`
+  / `recargo_equivalencia_amount`).
+- **[ES-TL-11]** IRPF withholding emitted in `TaxesWithheld` (`irpf_rate`).
+- QR response (`es__generate_qr_verifactu`) now includes physical-spec metadata
+  (`error_correction`, `size`).
+
+#### Fixed
+- **[ES-LC-14]** FACe submission and status tools rewritten from an incorrect OAuth2
+  client-credentials flow to JWS-signed JWT auth (RS256, `x5c` header), per
+  `FACe-manual-api-integradores.pdf` s2.3. Reuses the existing AEAT certificate; no
+  separate FACe credentials required. Depends on core v1.16.0's new `AuthMode.JWS`.
+- **[ES-TL-8]** `fmt_amount` now rounds HALF_UP (was Python's default HALF_EVEN),
+  matching the Factura-e/VeriFactu spec.
+- **[ES-SC-10]** VeriFactu Huella (`RegistroAlta`) rebuilt to the confirmed keyed
+  canonical-string form.
+- **[ES-SC-11]** VeriFactu Huella (`RegistroAnulacion`) now uses a dedicated field set
+  instead of reusing the `RegistroAlta` canonical string.
+
+#### Security
+- **[ES-SH-6]** `cert_password` removed as a `es__sign_facturae_xades` tool argument;
+  the certificate password is read from `AEAT_CERTIFICATE_PASSWORD` instead, avoiding
+  plaintext credential exposure in LLM context/logs.
+- **[ES-SH-7]** FACe responses are parsed to a structured, non-sensitive subset before
+  reaching the LLM, instead of echoing the raw response.
+
+#### Docs
+- **[ES-SC-12]** VeriFactu technical reference (huella, QR, WSDL ops) transcribed into
+  `specs/verifactu/documentation/` with provenance.
+
+#### Dependencies
+- Core pin raised to `mcp-einvoicing-core>=1.16.0,<2.0.0`.
+
 ### [0.5.0] - 2026-06-26
 #### Endpoint verification and sandbox scaffolding (Sprint 4)
 - **[ES-LC-10]** Full SII endpoint rewrite from bundled WSDLs: old wrong URLs (www7, BURT-JDIT)
