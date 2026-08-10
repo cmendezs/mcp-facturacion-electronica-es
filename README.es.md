@@ -108,7 +108,12 @@ Genera un registro de factura inviolable (Orden HAC/1177/2024) con encadenamient
 }
 ```
 
-> ⚠️ Pendiente de confirmacion regulatoria: XSD v1.0 (HAC/1177/2024) no validado aun contra el entorno de pruebas de la AEAT.
+> El algoritmo de encadenamiento `Huella` (SHA-256 sobre la cadena canonica `campo=valor&` con
+> claves) esta confirmado byte a byte contra la especificacion oficial de huella de la AEAT y
+> sus ejemplos resueltos
+> (`specs/verifactu/documentation/Veri-Factu_especificaciones_huella_hash_registros.pdf`).
+> ⚠️ Pendiente aun: validacion completa del XSD v1.0 contra una confirmacion real del entorno de
+> pruebas AEAT.
 
 ---
 
@@ -126,14 +131,24 @@ Valida un registro VERI\*FACTU XML contra el XSD oficial publicado con la Orden 
 { "tool": "es__validate_verifactu_record", "arguments": { "xml": "<RegistroFacturacion>...</RegistroFacturacion>" } }
 ```
 
-> ⚠️ Pendiente de confirmacion regulatoria
+> Las comprobaciones estructurales ahora distinguen correctamente entre `RegistroAlta` y
+> `RegistroAnulacion` (una version anterior marcaba erroneamente documentos `RegistroAnulacion`
+> validos como si les faltaran `TipoFactura`/`CuotaTotal`/`ImporteTotal`, campos que solo aplican
+> a `RegistroAlta`). La validacion en modo XSD completo (`SuministroLR.xsd`, incluido en
+> `specs/verifactu/xsd/`) requiere acceso a red en tiempo de ejecucion — importa el esquema
+> xmldsig-core de W3C mediante una URL remota — y recurre a las comprobaciones estructurales
+> anteriores cuando esa importacion no puede resolverse.
 
 ---
 
 #### `es__submit_verifactu_to_aeat`
 
 Envia un registro VERI\*FACTU firmado al endpoint en tiempo real de la AEAT mediante MTLS
-(certificado FNMT-RCM Clase 1). Respeta `AEAT_ENV=sandbox|production`.
+(certificado FNMT-RCM Clase 1) o, si `EINVOICING_SIGNER_SOCKET` esta configurado, a traves del
+microservicio de firma. Respeta `AEAT_ENV=sandbox|production`. El endpoint de envio
+(`.../SistemaFacturacion/VerifactuSOAP`) esta confirmado a partir del WSDL oficial de la AEAT y
+es compartido tanto por el envio de alta/anulacion como por la operacion de consulta de
+`es__query_verifactu_status`.
 
 | Parametro | Tipo | Obligatorio | Descripcion |
 |---|---|---|---|
@@ -144,7 +159,13 @@ Envia un registro VERI\*FACTU firmado al endpoint en tiempo real de la AEAT medi
 { "tool": "es__submit_verifactu_to_aeat", "arguments": { "xml": "<RegistroFacturacion>...</RegistroFacturacion>", "nif": "B12345678" } }
 ```
 
-> ⚠️ Pendiente de confirmacion regulatoria: `AuthMode.MTLS` no esta implementado aun en `mcp-einvoicing-core`; registrado en el backlog de gaps del core.
+La respuesta incluye un objeto `chain` que implementa el contrato de "encadenar solo lo
+aceptado": `chain.safe_to_chain_from` (el `emisor_nif`/`num_serie`/`fecha`/`huella` propios del
+registro enviado) solo se rellena cuando el `EstadoRegistro` de la AEAT es `Correcto` o
+`AceptadoConErrores` — ambos significan que el registro se almaceno realmente con esa `Huella`.
+En caso contrario, `safe_to_chain_from` es `null` con un `warning` explicito de no usar la
+`Huella` de este registro como `previous_hash` del siguiente, o (para un resultado `deferred`)
+una `note` para llamar antes a `es__query_verifactu_status`.
 
 ---
 
@@ -153,6 +174,10 @@ Envia un registro VERI\*FACTU firmado al endpoint en tiempo real de la AEAT medi
 Genera el codigo QR obligatorio de VERI\*FACTU (HAC/1177/2024 Art. 10) como PNG en base64.
 Codifica la URL de verificacion de la AEAT con el texto "Factura verificable en la sede
 electronica de la AEAT". Candidato a promocion a `mcp-einvoicing-core` (generacion de QR).
+El formato de la URL (host, ruta, parametros de consulta `nif`/`numserie`/`fecha`/`importe`, y
+la codificacion URL de cada parametro) esta confirmado contra la especificacion oficial de QR
+de la AEAT (`specs/verifactu/documentation/DetalleEspecificacTecnCodigoQRfactura.pdf`); la URL
+cambia entre el host `ValidarQR` de pruebas y el de produccion segun `AEAT_ENV`.
 
 | Parametro | Tipo | Obligatorio | Descripcion |
 |---|---|---|---|
@@ -166,14 +191,17 @@ electronica de la AEAT". Candidato a promocion a `mcp-einvoicing-core` (generaci
 { "tool": "es__generate_qr_verifactu", "arguments": { "nif": "B12345678", "invoice_number": "2025-0042", "invoice_date": "2025-03-15", "total_amount": 1210.00 } }
 ```
 
-> ⚠️ Pendiente de confirmacion regulatoria
-
 ---
 
 #### `es__cancel_verifactu_record`
 
-Genera un registro de anulacion VERI\*FACTU (`IndicadorAnulacion=S`, `TipoHuella=01`)
-encadenado a la secuencia de huellas actual.
+Genera un registro de anulacion VERI\*FACTU (`RegistroAnulacion`, `TipoHuella=01`) encadenado
+a la secuencia de huellas actual. Tanto la `Huella` de anulacion (SHA-256 sobre
+`IDEmisorFacturaAnulada`/`NumSerieFacturaAnulada`/`FechaExpedicionFacturaAnulada`/`Huella`/
+`FechaHoraHusoGenRegistro` — un conjunto de campos distinto al de `RegistroAlta`, no una copia
+reducida del mismo) como los nombres de elemento del bloque `<IDFactura>` de nivel superior
+estan confirmados contra la especificacion oficial de huella de la AEAT y contra
+`SuministroInformacion.xsd`.
 
 | Parametro | Tipo | Obligatorio | Descripcion |
 |---|---|---|---|
@@ -185,8 +213,6 @@ encadenado a la secuencia de huellas actual.
 ```json
 { "tool": "es__cancel_verifactu_record", "arguments": { "original_invoice_number": "2025-0042", "original_invoice_date": "2025-03-15", "issuer_nif": "B12345678", "previous_hash": "3C4A9B..." } }
 ```
-
-> ⚠️ Pendiente de confirmacion regulatoria
 
 ---
 
@@ -210,9 +236,10 @@ encadenar el siguiente registro. Requiere `AEAT_ENV`, `AEAT_CERTIFICATE_PATH` y
 { "tool": "es__query_verifactu_status", "arguments": { "nif": "B12345678", "name": "Empresa SL", "invoice_date": "2025-03-15", "num_serie_factura": "2025-0042" } }
 ```
 
-> ⚠️ Pendiente de confirmacion regulatoria: nombre del elemento raiz
-> (`ConsultaFactuSistemaFacturacion`) confirmado contra el XSD incluido; el parseo de la
-> respuesta aun no se ha validado contra una confirmacion real del entorno de pruebas AEAT.
+> El nombre del elemento raiz (`ConsultaFactuSistemaFacturacion`) y el endpoint — la misma URL
+> `.../SistemaFacturacion/VerifactuSOAP` que usa `es__submit_verifactu_to_aeat`, segun el WSDL
+> oficial — estan ambos confirmados. ⚠️ Pendiente aun: el parseo de la respuesta no se ha
+> validado contra una confirmacion real del entorno de pruebas AEAT.
 
 ---
 

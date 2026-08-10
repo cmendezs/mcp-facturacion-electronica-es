@@ -106,7 +106,10 @@ chaining that links it to the previous record.
 }
 ```
 
-> ⚠️ Pending regulatory confirmation: XSD v1.0 (HAC/1177/2024) not yet validated against the AEAT test environment.
+> The `Huella` chaining algorithm (SHA-256 over the keyed `campo=valor&` canonical string) is
+> confirmed byte-for-byte against AEAT's own huella specification and its worked examples
+> (`specs/verifactu/documentation/Veri-Factu_especificaciones_huella_hash_registros.pdf`).
+> ⚠️ Still pending: full XSD v1.0 validation against a live AEAT test-environment acknowledgement.
 
 ---
 
@@ -124,14 +127,22 @@ Validates a VERI\*FACTU XML record against the official XSD published with Orden
 { "tool": "es__validate_verifactu_record", "arguments": { "xml": "<RegistroFacturacion>...</RegistroFacturacion>" } }
 ```
 
-> ⚠️ Pending regulatory confirmation
+> Structural checks now branch correctly on `RegistroAlta` vs. `RegistroAnulacion` (a prior version
+> false-flagged valid `RegistroAnulacion` documents as missing `TipoFactura`/`CuotaTotal`/`ImporteTotal`,
+> fields that only apply to `RegistroAlta`). Full XSD-mode validation (`SuministroLR.xsd`, bundled
+> under `specs/verifactu/xsd/`) requires network access at runtime — it imports the W3C xmldsig-core
+> schema by remote URL — and falls back to the structural checks above when that import can't
+> resolve.
 
 ---
 
 #### `es__submit_verifactu_to_aeat`
 
 Submits a signed VERI\*FACTU record to the AEAT real-time endpoint via MTLS
-(FNMT-RCM Class 1 certificate). Respects `AEAT_ENV=sandbox|production`.
+(FNMT-RCM Class 1 certificate) or, if `EINVOICING_SIGNER_SOCKET` is configured, via the
+signer microservice. Respects `AEAT_ENV=sandbox|production`. The submission endpoint
+(`.../SistemaFacturacion/VerifactuSOAP`) is confirmed from the official AEAT WSDL and shared
+by both the alta/anulación submission and the `es__query_verifactu_status` query operation.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
@@ -142,7 +153,12 @@ Submits a signed VERI\*FACTU record to the AEAT real-time endpoint via MTLS
 { "tool": "es__submit_verifactu_to_aeat", "arguments": { "xml": "<RegistroFacturacion>...</RegistroFacturacion>", "nif": "B12345678" } }
 ```
 
-> ⚠️ Pending regulatory confirmation: `AuthMode.MTLS` is not yet implemented in `mcp-einvoicing-core`; tracked in the core gaps backlog.
+The response includes a `chain` object implementing the accepted-only chain contract:
+`chain.safe_to_chain_from` (the submitted record's own `emisor_nif`/`num_serie`/`fecha`/`huella`)
+is populated only when AEAT's `EstadoRegistro` is `Correcto` or `AceptadoConErrores` — both mean
+the record was actually stored under that `Huella`. Otherwise `safe_to_chain_from` is `null` with
+an explicit `warning` not to use this record's `Huella` as the next record's `previous_hash`, or
+(for a `deferred` result) a `note` to call `es__query_verifactu_status` first.
 
 ---
 
@@ -151,6 +167,10 @@ Submits a signed VERI\*FACTU record to the AEAT real-time endpoint via MTLS
 Generates the mandatory VERI\*FACTU QR code (HAC/1177/2024 Art. 10) as a base64-encoded PNG.
 Encodes the AEAT verification URL with the text "Factura verificable en la sede
 electronica de la AEAT". Candidate for promotion to `mcp-einvoicing-core` (QR generation).
+URL format (host, path, `nif`/`numserie`/`fecha`/`importe` query parameters, and per-parameter
+URL-encoding) is confirmed against the official AEAT QR specification
+(`specs/verifactu/documentation/DetalleEspecificacTecnCodigoQRfactura.pdf`); the URL switches
+between the sandbox and production `ValidarQR` host based on `AEAT_ENV`.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
@@ -164,14 +184,16 @@ electronica de la AEAT". Candidate for promotion to `mcp-einvoicing-core` (QR ge
 { "tool": "es__generate_qr_verifactu", "arguments": { "nif": "B12345678", "invoice_number": "2025-0042", "invoice_date": "2025-03-15", "total_amount": 1210.00 } }
 ```
 
-> ⚠️ Pending regulatory confirmation
-
 ---
 
 #### `es__cancel_verifactu_record`
 
-Generates a VERI\*FACTU cancellation record (`IndicadorAnulacion=S`, `TipoHuella=01`)
-chained to the current fingerprint sequence.
+Generates a VERI\*FACTU cancellation record (`RegistroAnulacion`, `TipoHuella=01`) chained to
+the current fingerprint sequence. Both the anulación `Huella` (SHA-256 over
+`IDEmisorFacturaAnulada`/`NumSerieFacturaAnulada`/`FechaExpedicionFacturaAnulada`/`Huella`/
+`FechaHoraHusoGenRegistro` — a distinct field set from `RegistroAlta`'s, not a reduced copy of
+it) and the top-level `<IDFactura>` block's element names are confirmed against the official AEAT
+huella specification and `SuministroInformacion.xsd`.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
@@ -183,8 +205,6 @@ chained to the current fingerprint sequence.
 ```json
 { "tool": "es__cancel_verifactu_record", "arguments": { "original_invoice_number": "2025-0042", "original_invoice_date": "2025-03-15", "issuer_nif": "B12345678", "previous_hash": "3C4A9B..." } }
 ```
-
-> ⚠️ Pending regulatory confirmation
 
 ---
 
@@ -208,9 +228,10 @@ as `es__submit_verifactu_to_aeat`.
 { "tool": "es__query_verifactu_status", "arguments": { "nif": "B12345678", "name": "Empresa SL", "invoice_date": "2025-03-15", "num_serie_factura": "2025-0042" } }
 ```
 
-> ⚠️ Pending regulatory confirmation: root element name (`ConsultaFactuSistemaFacturacion`)
-> confirmed against the bundled XSD; response parsing not yet validated against a live AEAT
-> sandbox acknowledgement.
+> Root element name (`ConsultaFactuSistemaFacturacion`) and endpoint — the same
+> `.../SistemaFacturacion/VerifactuSOAP` URL used by `es__submit_verifactu_to_aeat`, per the
+> official WSDL — are both confirmed. ⚠️ Still pending: response parsing has not been validated
+> against a live AEAT sandbox acknowledgement.
 
 ---
 
