@@ -169,15 +169,15 @@ VERIFACTU_QR_ENDPOINTS: MappingProxyType[str, str] = MappingProxyType(
 
 #: SII issued-invoice submission endpoints (immutable).
 #: Each environment exposes a "primary" (personal certificate) host and a
-#: "sello" (company seal certificate) host for the *same* operation — not a
-#: primary/secondary failover pair. Confirmed directly from the bundled
-#: WSDL's own port names: "SuministroFactEmitidas" (www1) vs.
-#: "SuministroFactEmitidasSello" (www10) — same pattern independently
-#: confirmed for VeriFactu's SistemaFacturacion.wsdl (see
+#: "sello" (company seal certificate, Certificado de Sello Electrónico) host
+#: for the *same* operation — not a primary/secondary failover pair. Confirmed
+#: directly from the bundled WSDL's own port names: "SuministroFactEmitidas"
+#: (www1) vs. "SuministroFactEmitidasSello" (www10) — same pattern
+#: independently confirmed for VeriFactu's SistemaFacturacion.wsdl (see
 #: tools/verifactu.py's VERIFACTU_ENDPOINTS / VERIFACTU_SELLO_ENDPOINTS).
 #: sii.py only ever reads ["primary"]; "sello" is not yet wired up as a
 #: caller-selectable auth path.
-#: Source: specs/sii/schemas/SuministroFactEmitidas.wsdl
+#: Source: specs/sii/schemas/SuministroFactEmitidas.wsdl (wsdl:port names)
 SII_ISSUED_ENDPOINTS: MappingProxyType[str, MappingProxyType[str, str]] = MappingProxyType(
     {
         "sandbox": MappingProxyType(
@@ -199,7 +199,7 @@ SII_ISSUED_ENDPOINTS: MappingProxyType[str, MappingProxyType[str, str]] = Mappin
 #: "primary"/"sello" distinction as above — confirmed from
 #: "SuministroFactRecibidas" (www1) vs. "SuministroFactRecibidasSello"
 #: (www10) in the bundled WSDL.
-#: Source: specs/sii/schemas/SuministroFactRecibidas.wsdl
+#: Source: specs/sii/schemas/SuministroFactRecibidas.wsdl (wsdl:port names)
 SII_RECEIVED_ENDPOINTS: MappingProxyType[str, MappingProxyType[str, str]] = MappingProxyType(
     {
         "sandbox": MappingProxyType(

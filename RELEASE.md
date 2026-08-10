@@ -41,6 +41,56 @@ mcp-publisher publish
 
 ## Changelog
 
+### [0.6.1] - 2026-08-09
+
+The project owner supplied the official AEAT VeriFactu documents (huella spec, QR spec, web
+service description, WSDL, XSDs) that ES-SC-12/ES-LC-8/ES-LC-9 had been waiting on. Verifying the
+already-published v0.6.0 against them confirmed the RegistroAlta huella (ES-SC-10) byte-for-byte
+correct, but found several regressions/gaps, all confirmed against the official documents rather
+than inference.
+
+#### Fixed
+- **[ES-SC-14] (HIGH)** Anulación huella now uses the official `*Anulada` field names
+  (`IDEmisorFacturaAnulada`/`NumSerieFacturaAnulada`/`FechaExpedicionFacturaAnulada`), not the
+  RegistroAlta field names — a regression within the earlier ES-SC-11 fix. Golden vectors from the
+  huella spec's own worked examples added to `test_verifactu.py`.
+- **[ES-SC-16] (HIGH)** `RegistroAnulacion`'s top-level `<IDFactura>` block used the RegistroAlta
+  element names instead of the XSD-required `*Anulada` names (`IDFacturaExpedidaBajaType`) — every
+  `es__cancel_verifactu_record` output was structurally XSD-invalid, independent of ES-SC-14. New
+  `_build_id_factura_anulada()` builder.
+- **[ES-SC-15] (MEDIUM)** `es__generate_qr_verifactu` hardcoded the sandbox host and did not
+  URL-encode parameter values; now switches sandbox/production via `AEAT_ENV` and encodes with
+  `quote_plus`.
+- **[ES-LC-8] / [ES-LC-9] (MEDIUM)** VeriFactu SOAP endpoint paths were guessed. The official WSDL
+  confirms both `RegFactuSistemaFacturacion` and `ConsultaFactuSistemaFacturacion` share one
+  endpoint (`.../SistemaFacturacion/VerifactuSOAP`), and that `www10`/`prewww10` are the
+  Sello-certificate (not failover-secondary) variant.
+- **[ES-LC-12] (LOW)** Re-chaining on rejected huella now enforced, not just documented.
+  `es__submit_verifactu_to_aeat` returns a new `chain` block: `safe_to_chain_from` is only
+  populated when `EstadoRegistro` is `Correcto`/`AceptadoConErrores` (per AEAT huella spec s7);
+  otherwise `None` with an explicit warning, or a note to poll `es__query_verifactu_status` for a
+  deferred result.
+- **[ES-LC-15] (MEDIUM)** `es__validate_verifactu_record`'s XSD path used 3 `.parent` hops (landed
+  on `src/`, not the package root) — silently degraded to structural-only validation on every
+  call, which is why ES-SC-16 was never caught. Fixed to 4 hops.
+- **[ES-SC-17] (LOW)** The same handler's structural-only checklist was RegistroAlta-only,
+  false-flagging `TipoFactura`/`CuotaTotal`/`ImporteTotal` as missing on every valid
+  RegistroAnulacion. Now branches on registro type.
+- **[ES-LC-16] (LOW)** `SII_ISSUED_ENDPOINTS`/`SII_RECEIVED_ENDPOINTS` `"secondary"` key renamed
+  to `"sello"`. The www10/prewww10 host is not a failover secondary for www1/prewww1: the bundled
+  WSDLs name its ports `SuministroFactEmitidasSello` / `SuministroFactRecibidasSello`, i.e. the
+  company-seal-certificate variant of the same operation. Documentation/labeling only — `sii.py`
+  only ever reads `endpoints[env]["primary"]`, so there is no behavior change.
+- **[ES-LC-11] (LOW)** Real gap was in core, not ES: `signer_service.py` had no 429/503 retry,
+  unlike `BaseEInvoicingClient._request`. Fixed in `mcp-einvoicing-core` v1.16.2 (no ES-side code
+  change); core floor pin raised to `>=1.16.2`.
+
+Official AEAT documents bundled into `specs/verifactu/` (`documentation/`, `schemas/`,
+`examples/`) with full provenance in `specs/README.md`; the prior user-supplied transcription
+marked superseded with inline callouts.
+
+145 tests passing (134 + 11 new) / 4 skipped, ruff clean, audit gate PASS 0 blocking / 0 warnings.
+
 ### [0.6.0] - 2026-08-09
 #### Added
 - **[ES-LC-10]** `es__query_verifactu_status` tool: queries `EstadoRegistro` for an
