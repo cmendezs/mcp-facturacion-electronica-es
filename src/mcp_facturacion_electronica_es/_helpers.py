@@ -115,70 +115,103 @@ def face_env() -> str:
 # AEAT endpoint registry
 # ---------------------------------------------------------------------------
 
-#: VERI*FACTU submission endpoints (immutable — MappingProxyType prevents runtime mutation)
+#: VERI*FACTU submission endpoints (immutable — MappingProxyType prevents runtime mutation).
+#: Source: specs/verifactu/schemas/SistemaFacturacion.wsdl, binding "sfVerifactu",
+#: port "SistemaVerifactu" (production, personal cert) / "SistemaVerifactuPruebas"
+#: (sandbox, personal cert). The soap:address is confirmed directly from the
+#: bundled WSDL (not inferred). A "Sello" (company seal certificate) variant of
+#: each environment also exists at the same path on host www10/prewww10 — see
+#: VERIFACTU_SELLO_ENDPOINTS below; it is a different certificate type, not a
+#: failover secondary.
 VERIFACTU_ENDPOINTS: MappingProxyType[str, str] = MappingProxyType(
     {
-        "sandbox": (
-            "https://prewww2.aeat.es/wlpl/TIKE-CONT/ws/SistemaFacturacion/FactSistemaFacturacion"
-        ),
+        "sandbox": ("https://prewww1.aeat.es/wlpl/TIKE-CONT/ws/SistemaFacturacion/VerifactuSOAP"),
         "production": (
-            "https://www2.agenciatributaria.gob.es"
-            "/wlpl/TIKE-CONT/ws/SistemaFacturacion/FactSistemaFacturacion"
+            "https://www1.agenciatributaria.gob.es"
+            "/wlpl/TIKE-CONT/ws/SistemaFacturacion/VerifactuSOAP"
         ),
-        # [NEED: verify both URLs against AEAT VeriFactu technical guide PDF
-        #  (not included in bundled specs/ as of 2026-06-26; XSD namespace path
-        #  /tike/cont/ws/ is consistent with the TIKE-CONT path used here)]
     }
 )
 
-#: VERI*FACTU consulta (ConsultaFactuSistemaFacturacion / ConsultaLR.xsd) endpoints.
-#: [NEED: verify: no VeriFactu WSDL is bundled in specs/ (only XSDs); the exact
-#:  URL segment for the consulta operation has not been confirmed. Reuses the
-#:  same TIKE-CONT service base path as VERIFACTU_ENDPOINTS by convention.]
-VERIFACTU_CONSULTA_ENDPOINTS: MappingProxyType[str, str] = MappingProxyType(
+#: VERI*FACTU endpoints for callers authenticating with a Sello (company seal)
+#: certificate rather than a personal certificate. Same WSDL binding/operations
+#: as VERIFACTU_ENDPOINTS, different host (www10/prewww10 vs. www1/prewww1).
+#: Source: specs/verifactu/schemas/SistemaFacturacion.wsdl, ports
+#: "SistemaVerifactuSello" / "SistemaVerifactuSelloPruebas".
+VERIFACTU_SELLO_ENDPOINTS: MappingProxyType[str, str] = MappingProxyType(
     {
-        "sandbox": ("https://prewww2.aeat.es/wlpl/TIKE-CONT/ws/SistemaFacturacion/ConsultaLR"),
+        "sandbox": ("https://prewww10.aeat.es/wlpl/TIKE-CONT/ws/SistemaFacturacion/VerifactuSOAP"),
         "production": (
-            "https://www2.agenciatributaria.gob.es"
-            "/wlpl/TIKE-CONT/ws/SistemaFacturacion/ConsultaLR"
+            "https://www10.agenciatributaria.gob.es"
+            "/wlpl/TIKE-CONT/ws/SistemaFacturacion/VerifactuSOAP"
         ),
+    }
+)
+
+#: VERI*FACTU consulta (ConsultaFactuSistemaFacturacion) endpoint.
+#: Confirmed from the WSDL: RegFactuSistemaFacturacion and
+#: ConsultaFactuSistemaFacturacion are both operations of the same "sfVerifactu"
+#: binding, so they share the identical soap:address as VERIFACTU_ENDPOINTS —
+#: there is no separate "/ConsultaLR" path on the live service (ConsultaLR.xsd
+#: is only the request *schema*, not a distinct endpoint).
+VERIFACTU_CONSULTA_ENDPOINTS: MappingProxyType[str, str] = VERIFACTU_ENDPOINTS
+
+#: VERI*FACTU QR-code verification service ("cotejo") endpoints — a separate
+#: REST-style service from the SOAP submission/consulta endpoints above, on a
+#: different host (www2/prewww2). Source:
+#: specs/verifactu/documentation/DetalleEspecificacTecnCodigoQRfactura.pdf s5.
+VERIFACTU_QR_ENDPOINTS: MappingProxyType[str, str] = MappingProxyType(
+    {
+        "sandbox": "https://prewww2.aeat.es/wlpl/TIKE-CONT/ValidarQR",
+        "production": "https://www2.agenciatributaria.gob.es/wlpl/TIKE-CONT/ValidarQR",
     }
 )
 
 #: SII issued-invoice submission endpoints (immutable).
-#: Each environment exposes a primary + secondary host for failover.
+#: Each environment exposes a "primary" (personal certificate) host and a
+#: "sello" (company seal certificate) host for the *same* operation — not a
+#: primary/secondary failover pair. Confirmed directly from the bundled
+#: WSDL's own port names: "SuministroFactEmitidas" (www1) vs.
+#: "SuministroFactEmitidasSello" (www10) — same pattern independently
+#: confirmed for VeriFactu's SistemaFacturacion.wsdl (see
+#: tools/verifactu.py's VERIFACTU_ENDPOINTS / VERIFACTU_SELLO_ENDPOINTS).
+#: sii.py only ever reads ["primary"]; "sello" is not yet wired up as a
+#: caller-selectable auth path.
 #: Source: specs/sii/schemas/SuministroFactEmitidas.wsdl
 SII_ISSUED_ENDPOINTS: MappingProxyType[str, MappingProxyType[str, str]] = MappingProxyType(
     {
         "sandbox": MappingProxyType(
             {
                 "primary": "https://prewww1.aeat.es/wlpl/SSII-FACT/ws/fe/SiiFactFEV1SOAP",
-                "secondary": "https://prewww10.aeat.es/wlpl/SSII-FACT/ws/fe/SiiFactFEV1SOAP",
+                "sello": "https://prewww10.aeat.es/wlpl/SSII-FACT/ws/fe/SiiFactFEV1SOAP",
             }
         ),
         "production": MappingProxyType(
             {
                 "primary": "https://www1.agenciatributaria.gob.es/wlpl/SSII-FACT/ws/fe/SiiFactFEV1SOAP",
-                "secondary": "https://www10.agenciatributaria.gob.es/wlpl/SSII-FACT/ws/fe/SiiFactFEV1SOAP",
+                "sello": "https://www10.agenciatributaria.gob.es/wlpl/SSII-FACT/ws/fe/SiiFactFEV1SOAP",
             }
         ),
     }
 )
 
 #: SII received-invoice submission endpoints (immutable).
+#: "primary"/"sello" distinction as above — confirmed from
+#: "SuministroFactRecibidas" (www1) vs. "SuministroFactRecibidasSello"
+#: (www10) in the bundled WSDL.
 #: Source: specs/sii/schemas/SuministroFactRecibidas.wsdl
 SII_RECEIVED_ENDPOINTS: MappingProxyType[str, MappingProxyType[str, str]] = MappingProxyType(
     {
         "sandbox": MappingProxyType(
             {
                 "primary": "https://prewww1.aeat.es/wlpl/SSII-FACT/ws/fr/SiiFactFRV1SOAP",
-                "secondary": "https://prewww10.aeat.es/wlpl/SSII-FACT/ws/fr/SiiFactFRV1SOAP",
+                "sello": "https://prewww10.aeat.es/wlpl/SSII-FACT/ws/fr/SiiFactFRV1SOAP",
             }
         ),
         "production": MappingProxyType(
             {
                 "primary": "https://www1.agenciatributaria.gob.es/wlpl/SSII-FACT/ws/fr/SiiFactFRV1SOAP",
-                "secondary": "https://www10.agenciatributaria.gob.es/wlpl/SSII-FACT/ws/fr/SiiFactFRV1SOAP",
+                "sello": "https://www10.agenciatributaria.gob.es/wlpl/SSII-FACT/ws/fr/SiiFactFRV1SOAP",
             }
         ),
     }
@@ -239,3 +272,10 @@ FACTURAE_POLICY_HASH_SHA256_ALGORITHM: str = "http://www.w3.org/2001/04/xmlenc#s
 # a record is generated but never accepted by AEAT, because subsequent records
 # reference its Huella. Callers should store (emisor_nif, num_serie, fecha, huella)
 # for each generated record and re-submit with the last accepted Huella on retry.
+#
+# ES-LC-12: this is now enforced, not just documented — see
+# tools/verifactu.py::_build_chain_result and _extract_chain_identity.
+# es__submit_verifactu_to_aeat returns a "chain" block: "safe_to_chain_from"
+# is only populated when EstadoRegistro is Correcto/AceptadoConErrores (the
+# accepted-only chain contract); otherwise it is None with an explicit
+# warning not to chain from that record.

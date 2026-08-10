@@ -1,17 +1,16 @@
-# VeriFactu technical reference: transcribed provenance record
+# VeriFactu technical reference: transcribed provenance record (SUPERSEDED)
 
-**Status:** `[Inference]`, transcribed from a technical reference supplied by the
-project owner during the 2026-08 v0.6.0 fix cycle (ES-SC-10 / ES-SC-11 / ES-SC-12).
-Not an official AEAT PDF or WSDL binary. Treat every value below as `[Unverified]`
-until validated against a live AEAT sandbox acknowledgement, per the closing note
-in `audit/2026-07-audit-es.md`.
+**Status: SUPERSEDED (2026-08-09).** The official AEAT documents this file was
+a stand-in for are now bundled at `specs/verifactu/documentation/` (huella spec,
+QR spec, web service description) and `specs/verifactu/schemas/` (WSDL). Code
+now cites those documents directly; do not use this file as a source for new
+work. Kept for historical context only — see the two `⚠ WRONG, see below`
+callouts inline for the two places this transcription turned out to be
+incorrect once checked against the primary source.
 
-This file exists so the huella (fingerprint) canonical string, the QR physical
-spec, and the WSDL operation names used by this package have a recorded source,
-per the `specs/README.md` provenance convention. When the official AEAT huella
-generation note (PDF) and the VeriFactu WSDL binary are obtained, add them as
-new rows in `specs/README.md`'s provenance table and supersede this file as the
-primary record: do not delete it, keep it as historical context.
+**Original status (superseded):** `[Inference]`, transcribed from a technical
+reference supplied by the project owner during the 2026-08 v0.6.0 fix cycle
+(ES-SC-10 / ES-SC-11 / ES-SC-12). Not an official AEAT PDF or WSDL binary.
 
 ---
 
@@ -49,6 +48,16 @@ primary record: do not delete it, keep it as historical context.
 
 ## 2. Huella (RegistroAnulacion): dedicated field set
 
+> **⚠ WRONG, see below.** This transcription reused the *alta* field names
+> (`IDEmisorFactura`/`NumSerieFactura`/`FechaExpedicionFactura`) for the
+> anulación record. The official spec
+> (`Veri-Factu_especificaciones_huella_hash_registros.pdf` v0.1.2 s3.b) uses
+> **different** field names: `IDEmisorFacturaAnulada`, `NumSerieFacturaAnulada`,
+> `FechaExpedicionFacturaAnulada`. A huella built with the field names below
+> would fail AEAT's server-side hash check ("Aceptado con errores"). Fixed in
+> `tools/verifactu.py::_compute_huella_anulacion`; golden vectors from the
+> spec's own worked example (s6.3) are in `tests/test_verifactu.py`.
+
 The anulación (cancellation) record uses a **reduced** input set over the same
 keyed `campo=valor&` layout and normalization rules: it does **not** carry
 `TipoFactura` or `CuotaTotal`:
@@ -73,22 +82,27 @@ dedicated builder.
 
 ## 4. WSDL operations (service namespace `.../aeat/tike/cont/ws/`)
 
+> **⚠ WRONG, see below.** The operation names below do not match the official
+> `SistemaFacturacion.wsdl`. Superseded by
+> `specs/verifactu/schemas/SistemaFacturacion.wsdl` — see `specs/README.md`
+> for the confirmed operation names and endpoint URLs.
+
 | Operation | Purpose |
 |---|---|
 | `RegFactuSistemaFacturacionAlta` | Submit a new invoice record (`RegistroAlta`) |
 | `RegFactuSistemaFacturacionAnulacion` | Submit a cancellation record (`RegistroAnulacion`) |
 | `ConsultaLRFacturasEmitidas` | Query previously submitted records and their `EstadoRegistro` |
 
-**Note on ES-LC-10 implementation:** the bundled XSDs (`specs/verifactu/xsd/ConsultaLR.xsd`,
-`RespuestaConsultaLR.xsd`) name the query request/response root elements
-`ConsultaFactuSistemaFacturacion` / `RespuestaConsultaFactuSistemaFacturacion`
-rather than `ConsultaLRFacturasEmitidas`. The implementation in
-`tools/verifactu.py` (`_build_consulta_lr` / `_parse_consulta_lr_response`)
-follows the bundled XSD element names, since they are the more authoritative,
-machine-checkable primary source (the request was validated against
-`ConsultaLR.xsd` locally). This reference's operation name for the query call
-is recorded here as-supplied for provenance; the two are believed to refer to
-the same underlying AEAT service.
+**Note on ES-LC-10 implementation (now confirmed correct):** the official WSDL
+confirms a single operation, `RegFactuSistemaFacturacion`, handles both
+`RegistroAlta` and `RegistroAnulacion` submissions (the XML body's root element
+determines which), and `ConsultaFactuSistemaFacturacion` is the query
+operation — both operations belong to the same `sfVerifactu` binding and share
+one SOAP endpoint (`.../SistemaFacturacion/VerifactuSOAP`), confirming the
+`tools/verifactu.py` implementation's choice of element names against the
+bundled XSDs was correct, and that `VERIFACTU_CONSULTA_ENDPOINTS` should be the
+*same* URL as `VERIFACTU_ENDPOINTS` rather than a separate `/ConsultaLR` path
+(fixed in `_helpers.py`).
 
 ## 5. Authentication
 

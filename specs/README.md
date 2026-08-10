@@ -18,7 +18,10 @@ specs/
 │   ├── examples/               Sample SOAP request/response XML files
 │   └── schemas/                WSDL service contracts + XSD data schemas
 ├── verifactu/                  VeriFactu — real-time AEAT invoice registry (RD 1007/2023)
-│   └── documentation/          BOE legal text (original + consolidated)
+│   ├── documentation/          BOE legal text + official AEAT technical notes (huella, QR, web service)
+│   ├── schemas/                Official WSDL (SistemaFacturacion.wsdl)
+│   ├── xsd/                    Official XSD schemas (SuministroInformacion, SuministroLR, etc.)
+│   └── examples/               Official signed RegistroAlta examples (AnexosEjemplosFirmaRegFact.zip)
 └── crea-y-crece/               Ley Crea y Crece — future B2B mandate (Ley 18/2022)
     └── documentation/          BOE law text only; technical specs pending Ministerial Order
 ```
@@ -35,7 +38,15 @@ specs/
 | Factura-e XSLT viewer (3.2.2) | 3.2.2 | https://www.facturae.gob.es |
 | VeriFactu — BOE-A-2024-22138 | Orden HAC/1177/2024 | https://www.boe.es |
 | VeriFactu — BOE-A-2024-22138 (consolidated) | RD 1007/2023 + HAC/1177/2024 | https://www.boe.es |
-| VeriFactu technical reference (huella, QR, WSDL ops) | `[Inference]`, 2026-08 | User-supplied; transcribed in `verifactu/documentation/verifactu-technical-reference.md`. Supersede with the official AEAT huella note PDF and WSDL binary once available. |
+| VeriFactu huella spec (`Veri-Factu_especificaciones_huella_hash_registros.pdf`) | v0.1.2, 27/08/2024 | AEAT (Sede Electrónica), user-supplied 2026-08-09 |
+| VeriFactu QR code spec (`DetalleEspecificacTecnCodigoQRfactura.pdf`) | v0.5.0, 10/12/2025 | AEAT (Sede Electrónica), user-supplied 2026-08-09 |
+| VeriFactu web service description (`Veri-Factu_Descripcion_SWeb.pdf`) | v1.0.3, 28/07/2025 | AEAT (Sede Electrónica), user-supplied 2026-08-09 |
+| VeriFactu WSDL (`SistemaFacturacion.wsdl`) | — | AEAT, user-supplied 2026-08-09; soap:address entries are the authoritative source for `_helpers.VERIFACTU_ENDPOINTS` / `VERIFACTU_SELLO_ENDPOINTS` |
+| VeriFactu validation/error catalog (`Validaciones_Errores_Veri-Factu.pdf`, `errores.properties`) | — | AEAT, user-supplied 2026-08-09; reference only, not yet wired into a local error-code table |
+| VeriFactu XSD bundle (7 files, `verifactu/xsd/`) | — | AEAT; byte-identical to the 2026-06-26 bundle already present, reconfirmed against the user-supplied 2026-08-09 copies |
+| VeriFactu signed RegistroAlta examples (`AnexosEjemplosFirmaRegFact.zip`) | — | AEAT, user-supplied 2026-08-09; not yet used by tests |
+| VeriFactu "declaración responsable" examples (`EjemplosDeclaracionResponsable(V0.5.1).pdf`), `DsRegistroVeriFactu.xlsx` | v0.5.1 | AEAT, user-supplied 2026-08-09; SIF-certification reference material, not used by this package's tools |
+| ~~VeriFactu technical reference (huella, QR, WSDL ops)~~ | `[Inference]`, 2026-08 | **Superseded 2026-08-09** by the official documents above. User-supplied transcription in `verifactu/documentation/verifactu-technical-reference.md`; two of its claims (RegistroAnulacion field names, WSDL operation names) turned out wrong when checked against the primary source — see the inline callouts in that file and ES-SC-10/11/ES-LC-8/9/10 in `context-library/audit-history.md`. |
 | Ley Crea y Crece — BOE-A-2022-15818 | Ley 18/2022 | https://www.boe.es |
 
 ## Pending specs
@@ -73,6 +84,24 @@ All 7 files belong in the same directory (`verifactu/xsd/`) because the schemas 
 Each schema appends its own filename to form its targetNamespace. For example:
 - `SuministroInformacion.xsd` namespace: `…/SuministroInformacion.xsd`
 - `SuministroLR.xsd` namespace: `…/SuministroLR.xsd`
+
+## VeriFactu WSDL (`verifactu/schemas/SistemaFacturacion.wsdl`)
+
+Two services, four ports each (production/sandbox × personal-certificate/Sello-certificate).
+`www10`/`prewww10` are **not** a failover secondary for `www1`/`prewww1` — they are the
+Sello (company seal) certificate variant of the same operation, confirmed directly from
+the WSDL's own port names (`SistemaVerifactuSello`, `SistemaVerifactuSelloPruebas`).
+
+| Service | Binding | Operations | Port (URL host) |
+|---|---|---|---|
+| `sfVerifactu` | `sfVerifactu` | `RegFactuSistemaFacturacion` (alta + anulación, by XML root element), `ConsultaFactuSistemaFacturacion` | `www1`/`www10`.agenciatributaria.gob.es (prod), `prewww1`/`prewww10`.aeat.es (sandbox) — path `/wlpl/TIKE-CONT/ws/SistemaFacturacion/VerifactuSOAP` |
+| `sfRequerimiento` | `sfRequerimiento` | `RegFactuSistemaFacturacion` (response to an AEAT-initiated requerimiento) | same hosts, path `/wlpl/TIKE-CONT/ws/SistemaFacturacion/RequerimientoSOAP` — not implemented by this package (voluntary remisión only) |
+
+`RegFactuSistemaFacturacion` and `ConsultaFactuSistemaFacturacion` share one endpoint —
+see `_helpers.VERIFACTU_ENDPOINTS` / `VERIFACTU_CONSULTA_ENDPOINTS` (now the same value)
+and `VERIFACTU_SELLO_ENDPOINTS`. The QR verification service (`ValidarQR`, section above)
+is a separate REST-style endpoint on a third host pair (`www2`/`prewww2`) — see
+`VERIFACTU_QR_ENDPOINTS`.
 
 ## SII WSDL schema inventory
 

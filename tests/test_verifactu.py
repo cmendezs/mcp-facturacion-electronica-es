@@ -133,12 +133,13 @@ def test_compute_huella_algorithm_genesis_record() -> None:
 
 
 def test_compute_huella_anulacion_algorithm() -> None:
-    """ES-SC-11: anulación huella uses the dedicated reduced field set (no
-    TipoFactura, no CuotaTotal)."""
+    """ES-SC-11: anulación huella uses the dedicated *Anulada field set (no
+    TipoFactura, no CuotaTotal, and IDEmisorFacturaAnulada/NumSerieFacturaAnulada/
+    FechaExpedicionFacturaAnulada — not the alta field names)."""
     prev_hash = "AABBCC" * 10 + "AABB"
     raw = (
-        "IDEmisorFactura=B12345678&NumSerieFactura=2025-0001&"
-        "FechaExpedicionFactura=15-03-2025&"
+        "IDEmisorFacturaAnulada=B12345678&NumSerieFacturaAnulada=2025-0001&"
+        "FechaExpedicionFacturaAnulada=15-03-2025&"
         f"Huella={prev_hash}&"
         "FechaHoraHusoGenRegistro=2025-03-16T09:00:00+01:00"
     )
@@ -151,6 +152,57 @@ def test_compute_huella_anulacion_algorithm() -> None:
         huella_anterior=prev_hash,
     )
     assert result == expected
+
+
+# ---------------------------------------------------------------------------
+# Golden vectors from the official AEAT huella spec (worked examples s6.1-6.3 of
+# Veri-Factu_especificaciones_huella_hash_registros.pdf v0.1.2, bundled at
+# specs/verifactu/documentation/). These pin the exact field order/naming
+# independently of the implementation, so a regression to the pre-fix field
+# names (or any reordering) fails immediately.
+# ---------------------------------------------------------------------------
+
+
+def test_compute_huella_alta_official_vector_genesis() -> None:
+    """Spec s6.1: first (genesis) RegistroAlta."""
+    result = _compute_huella(
+        emisor_nif="89890001K",
+        num_serie="12345678/G33",
+        fecha_es="01-01-2024",
+        tipo_factura="F1",
+        cuota_total="12.35",
+        importe_total="123.45",
+        fecha_hora_gen="2024-01-01T19:20:30+01:00",
+        huella_anterior=None,
+    )
+    assert result == "3C464DAF61ACB827C65FDA19F352A4E3BDC2C640E9E9FC4CC058073F38F12F60"
+
+
+def test_compute_huella_alta_official_vector_chained() -> None:
+    """Spec s6.2: second RegistroAlta, chained to s6.1's huella."""
+    result = _compute_huella(
+        emisor_nif="89890001K",
+        num_serie="12345679/G34",
+        fecha_es="01-01-2024",
+        tipo_factura="F1",
+        cuota_total="12.35",
+        importe_total="123.45",
+        fecha_hora_gen="2024-01-01T19:20:35+01:00",
+        huella_anterior="3C464DAF61ACB827C65FDA19F352A4E3BDC2C640E9E9FC4CC058073F38F12F60",
+    )
+    assert result == "F7B94CFD8924EDFF273501B01EE5153E4CE8F259766F88CF6ACB8935802A2B97"
+
+
+def test_compute_huella_anulacion_official_vector() -> None:
+    """Spec s6.3: RegistroAnulacion chained to s6.2's huella."""
+    result = _compute_huella_anulacion(
+        emisor_nif="89890001K",
+        num_serie="12345679/G34",
+        fecha_es="01-01-2024",
+        fecha_hora_gen="2024-01-01T19:20:40+01:00",
+        huella_anterior="F7B94CFD8924EDFF273501B01EE5153E4CE8F259766F88CF6ACB8935802A2B97",
+    )
+    assert result == "177547C0D57AC74748561D054A9CEC14B4C4EA23D1BEFD6F2E69E3A388F90C68"
 
 
 def test_compute_huella_anulacion_differs_from_alta() -> None:
@@ -285,6 +337,243 @@ async def test_handle_cancel_verifactu_record() -> None:
 
 
 @pytest.mark.asyncio
+async def test_handle_cancel_verifactu_record_uses_anulada_id_factura_names() -> None:
+    """The top-level <IDFactura> block inside RegistroAnulacion must use the
+    "*Anulada" element names (IDFacturaExpedidaBajaType in
+    SuministroInformacion.xsd), not the RegistroAlta names — a prior
+    implementation reused _build_id_factura (the alta builder) here, which is
+    structurally invalid against the XSD."""
+    from mcp_facturacion_electronica_es.tools.verifactu import handle_es_cancel_verifactu_record
+
+    result = await handle_es_cancel_verifactu_record(
+        {
+            "original_invoice_number": "2025-0001",
+            "original_invoice_date": "2025-03-15",
+            "issuer_nif": "B12345678",
+            "issuer_name": "Empresa de Prueba SL",
+            "previous_hash": "A" * 64,
+        }
+    )
+    data = json.loads(result[0].text)
+    xml = data["xml"]
+
+    idf_start = xml.index("<sf:IDFactura>")
+    idf_end = xml.index("</sf:IDFactura>")
+    id_factura_block = xml[idf_start:idf_end]
+
+    assert "IDEmisorFacturaAnulada" in id_factura_block
+    assert "NumSerieFacturaAnulada" in id_factura_block
+    assert "FechaExpedicionFacturaAnulada" in id_factura_block
+    # The alta-only (unsuffixed) names must not appear inside this specific
+    # block — they legitimately appear elsewhere, in <RegistroAnterior>.
+    assert "sf:IDEmisorFactura>" not in id_factura_block
+    assert "sf:NumSerieFactura>" not in id_factura_block
+    assert "sf:FechaExpedicionFactura>" not in id_factura_block
+
+
+@pytest.mark.asyncio
+async def test_handle_validate_verifactu_record_anulacion_no_false_positives() -> None:
+    """A valid RegistroAnulacion has no TipoFactura/CuotaTotal/ImporteTotal —
+    those are RegistroAlta-only fields. The structural checklist must not
+    require them for an anulación document (regression: it previously
+    reported all three as "missing" on every valid anulación)."""
+    from mcp_facturacion_electronica_es.tools.verifactu import (
+        handle_es_cancel_verifactu_record,
+        handle_es_validate_verifactu_record,
+    )
+
+    gen_result = await handle_es_cancel_verifactu_record(
+        {
+            "original_invoice_number": "2025-0001",
+            "original_invoice_date": "2025-03-15",
+            "issuer_nif": "B12345678",
+            "issuer_name": "Empresa de Prueba SL",
+            "previous_hash": "A" * 64,
+        }
+    )
+    xml = json.loads(gen_result[0].text)["xml"]
+
+    val_result = await handle_es_validate_verifactu_record({"xml": xml})
+    val_data = json.loads(val_result[0].text)
+    assert val_data["errors"] == []
+    assert val_data["valid"] is True
+
+
+def test_validate_verifactu_xsd_path_resolves_to_bundled_schema() -> None:
+    """Regression: the XSD path in handle_es_validate_verifactu_record used
+    three .parent hops (landing on src/, one level short of the package
+    root), silently degrading every call to structural-only validation
+    forever. Four hops are required to reach specs/."""
+    import pathlib
+
+    import mcp_facturacion_electronica_es.tools.verifactu as verifactu_module
+
+    xsd_path = (
+        pathlib.Path(verifactu_module.__file__).parent.parent.parent.parent
+        / "specs"
+        / "verifactu"
+        / "xsd"
+        / "SuministroLR.xsd"
+    )
+    assert xsd_path.exists(), f"expected bundled XSD at {xsd_path}"
+
+
+# ---------------------------------------------------------------------------
+# ES-LC-12: accepted-only chain contract
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_extract_chain_identity_from_registro_alta(minimal_invoice) -> None:
+    from mcp_facturacion_electronica_es.tools.verifactu import (
+        _extract_chain_identity,
+        handle_es_generate_verifactu_record,
+    )
+
+    result = await handle_es_generate_verifactu_record(
+        {
+            "invoice": minimal_invoice.model_dump(),
+            "software_id": "SW-001",
+            "software_nif": "B87654321",
+        }
+    )
+    data = json.loads(result[0].text)
+    identity = _extract_chain_identity(data["xml"].encode())
+
+    assert identity is not None
+    assert identity["emisor_nif"] == minimal_invoice.seller.tax_id.identifier
+    assert identity["num_serie"] == minimal_invoice.number
+    assert identity["huella"] == data["huella"]
+
+
+@pytest.mark.asyncio
+async def test_extract_chain_identity_from_registro_anulacion() -> None:
+    from mcp_facturacion_electronica_es.tools.verifactu import (
+        _extract_chain_identity,
+        handle_es_cancel_verifactu_record,
+    )
+
+    result = await handle_es_cancel_verifactu_record(
+        {
+            "original_invoice_number": "2025-0001",
+            "original_invoice_date": "2025-03-15",
+            "issuer_nif": "B12345678",
+            "issuer_name": "Empresa de Prueba SL",
+            "previous_hash": "A" * 64,
+        }
+    )
+    data = json.loads(result[0].text)
+    identity = _extract_chain_identity(data["xml"].encode())
+
+    assert identity is not None
+    assert identity["emisor_nif"] == "B12345678"
+    assert identity["num_serie"] == "2025-0001"
+    assert identity["huella"] == data["huella"]
+    # Must not be confused with RegistroAnterior's identity (previous_hash="A"*64)
+    assert identity["huella"] != "A" * 64
+
+
+def test_extract_chain_identity_ignores_registro_anterior_fields() -> None:
+    """Regression: RegistroAnterior carries the *same* local-names
+    (IDEmisorFactura/NumSerieFactura/FechaExpedicionFactura/Huella) as the
+    top-level RegistroAlta identity — extraction must not accidentally pick
+    up the predecessor's identity instead of this record's own."""
+    from mcp_facturacion_electronica_es.tools.verifactu import _extract_chain_identity
+
+    xml = (
+        b"<sfLR:RegFactuSistemaFacturacion "
+        b'xmlns:sfLR="urn:lr" xmlns:sf="urn:sf">'
+        b"<sfLR:RegistroFactura><sf:RegistroAlta>"
+        b"<sf:IDFactura><sf:IDEmisorFactura>B12345678</sf:IDEmisorFactura>"
+        b"<sf:NumSerieFactura>2025-0002</sf:NumSerieFactura>"
+        b"<sf:FechaExpedicionFactura>16-03-2025</sf:FechaExpedicionFactura>"
+        b"</sf:IDFactura>"
+        b"<sf:Encadenamiento><sf:RegistroAnterior>"
+        b"<sf:IDEmisorFactura>B12345678</sf:IDEmisorFactura>"
+        b"<sf:NumSerieFactura>2025-0001</sf:NumSerieFactura>"
+        b"<sf:FechaExpedicionFactura>15-03-2025</sf:FechaExpedicionFactura>"
+        b"<sf:Huella>" + b"A" * 64 + b"</sf:Huella>"
+        b"</sf:RegistroAnterior></sf:Encadenamiento>"
+        b"<sf:Huella>" + b"B" * 64 + b"</sf:Huella>"
+        b"</sf:RegistroAlta></sfLR:RegistroFactura></sfLR:RegFactuSistemaFacturacion>"
+    )
+    identity = _extract_chain_identity(xml)
+    assert identity is not None
+    assert identity["num_serie"] == "2025-0002"
+    assert identity["fecha"] == "16-03-2025"
+    assert identity["huella"] == "B" * 64
+
+
+def test_build_chain_result_accepted_correcto() -> None:
+    from mcp_facturacion_electronica_es.tools.verifactu import _build_chain_result
+
+    xml = (
+        b"<sfLR:RegFactuSistemaFacturacion "
+        b'xmlns:sfLR="urn:lr" xmlns:sf="urn:sf">'
+        b"<sfLR:RegistroFactura><sf:RegistroAlta>"
+        b"<sf:IDFactura><sf:IDEmisorFactura>B12345678</sf:IDEmisorFactura>"
+        b"<sf:NumSerieFactura>2025-0001</sf:NumSerieFactura>"
+        b"<sf:FechaExpedicionFactura>15-03-2025</sf:FechaExpedicionFactura>"
+        b"</sf:IDFactura>"
+        b"<sf:Huella>" + b"A" * 64 + b"</sf:Huella>"
+        b"</sf:RegistroAlta></sfLR:RegistroFactura></sfLR:RegFactuSistemaFacturacion>"
+    )
+    result = _build_chain_result({"EstadoRegistro": "Correcto"}, xml)
+    assert result["accepted"] is True
+    assert result["safe_to_chain_from"]["huella"] == "A" * 64
+
+
+def test_build_chain_result_accepted_con_errores_still_chainable() -> None:
+    """Per the AEAT huella spec s7: a huella mismatch alone produces
+    AceptadoConErrores, not Incorrecto — the record is still stored under its
+    Huella, so it remains safe to chain from."""
+    from mcp_facturacion_electronica_es.tools.verifactu import _build_chain_result
+
+    xml = (
+        b"<sfLR:RegFactuSistemaFacturacion "
+        b'xmlns:sfLR="urn:lr" xmlns:sf="urn:sf">'
+        b"<sfLR:RegistroFactura><sf:RegistroAlta>"
+        b"<sf:IDFactura><sf:IDEmisorFactura>B12345678</sf:IDEmisorFactura>"
+        b"<sf:NumSerieFactura>2025-0001</sf:NumSerieFactura>"
+        b"<sf:FechaExpedicionFactura>15-03-2025</sf:FechaExpedicionFactura>"
+        b"</sf:IDFactura>"
+        b"<sf:Huella>" + b"B" * 64 + b"</sf:Huella>"
+        b"</sf:RegistroAlta></sfLR:RegistroFactura></sfLR:RegFactuSistemaFacturacion>"
+    )
+    result = _build_chain_result({"EstadoRegistro": "AceptadoConErrores"}, xml)
+    assert result["accepted"] is True
+    assert result["safe_to_chain_from"] is not None
+
+
+def test_build_chain_result_rejected_incorrecto_blocks_chaining() -> None:
+    from mcp_facturacion_electronica_es.tools.verifactu import _build_chain_result
+
+    result = _build_chain_result({"EstadoRegistro": "Incorrecto"}, b"<x/>")
+    assert result["accepted"] is False
+    assert result["safe_to_chain_from"] is None
+    assert "warning" in result
+
+
+def test_build_chain_result_deferred_blocks_chaining() -> None:
+    from mcp_facturacion_electronica_es.tools.verifactu import _build_chain_result
+
+    result = _build_chain_result({"status": "deferred", "retry_after_seconds": 30}, b"<x/>")
+    assert result["accepted"] is None
+    assert result["safe_to_chain_from"] is None
+    assert "note" in result
+
+
+def test_build_chain_result_no_estado_blocks_chaining() -> None:
+    """Transport-level failure or unparseable response: no EstadoRegistro at
+    all must not be treated as accepted."""
+    from mcp_facturacion_electronica_es.tools.verifactu import _build_chain_result
+
+    result = _build_chain_result({}, b"<x/>")
+    assert result["accepted"] is False
+    assert result["safe_to_chain_from"] is None
+
+
+@pytest.mark.asyncio
 async def test_handle_validate_verifactu_record_valid(minimal_verifactu_xml) -> None:
     from mcp_facturacion_electronica_es.tools.verifactu import handle_es_validate_verifactu_record
 
@@ -365,12 +654,12 @@ def test_verifactu_response_no_espera() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Batch 5: QR URL uses provisional AEAT base, mandatory legends
+# Batch 5: QR URL matches the confirmed AEAT ValidarQR spec, mandatory legends
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
-async def test_qr_url_uses_provisional_base() -> None:
+async def test_qr_url_uses_sandbox_base_by_default() -> None:
     from mcp_facturacion_electronica_es.tools.verifactu import handle_es_generate_qr_verifactu
 
     result = await handle_es_generate_qr_verifactu(
@@ -382,10 +671,75 @@ async def test_qr_url_uses_provisional_base() -> None:
         }
     )
     data = json.loads(result[0].text)
-    assert "prewww2.aeat.es" in data["verification_url"]
+    assert data["verification_url"].startswith(
+        "https://prewww2.aeat.es/wlpl/TIKE-CONT/ValidarQR?"
+    )
+    assert data["environment"] == "sandbox"
     assert "mandatory_legends" in data
     assert len(data["mandatory_legends"]) == 2
     assert "VERIFACTU" in data["mandatory_legends"]
+
+
+@pytest.mark.asyncio
+async def test_qr_url_switches_to_production(monkeypatch: pytest.MonkeyPatch) -> None:
+    from mcp_facturacion_electronica_es.tools.verifactu import handle_es_generate_qr_verifactu
+
+    monkeypatch.setenv("AEAT_ENV", "production")
+    result = await handle_es_generate_qr_verifactu(
+        {
+            "nif": "B12345678",
+            "invoice_number": "2025-0001",
+            "invoice_date": "2025-03-15",
+            "total_amount": 1210.00,
+        }
+    )
+    data = json.loads(result[0].text)
+    assert data["verification_url"].startswith(
+        "https://www2.agenciatributaria.gob.es/wlpl/TIKE-CONT/ValidarQR?"
+    )
+    assert data["environment"] == "production"
+
+
+@pytest.mark.asyncio
+async def test_qr_url_official_worked_example() -> None:
+    """DetalleEspecificacTecnCodigoQRfactura.pdf s8.1: exact query string for a
+    known nif/numserie/fecha/importe combination (no special characters)."""
+    from mcp_facturacion_electronica_es.tools.verifactu import handle_es_generate_qr_verifactu
+
+    result = await handle_es_generate_qr_verifactu(
+        {
+            "nif": "89890001K",
+            "invoice_number": "12345678-G33",
+            "invoice_date": "2024-09-01",
+            "total_amount": 241.4,
+        }
+    )
+    data = json.loads(result[0].text)
+    assert data["verification_url"] == (
+        "https://prewww2.aeat.es/wlpl/TIKE-CONT/ValidarQR"
+        "?nif=89890001K&numserie=12345678-G33&fecha=01-09-2024&importe=241.40"
+    )
+
+
+@pytest.mark.asyncio
+async def test_qr_url_encodes_special_characters_in_numserie() -> None:
+    """s4 of the spec: an unencoded "&" inside numserie would truncate the
+    query string; it must come out as "%26" (the doc's own worked example)."""
+    from mcp_facturacion_electronica_es.tools.verifactu import handle_es_generate_qr_verifactu
+
+    result = await handle_es_generate_qr_verifactu(
+        {
+            "nif": "89890001K",
+            "invoice_number": "12345678&G33",
+            "invoice_date": "2024-01-01",
+            "total_amount": 241.4,
+        }
+    )
+    data = json.loads(result[0].text)
+    assert "numserie=12345678%26G33" in data["verification_url"]
+    # Exactly 3 "&" separators for 4 params — an unencoded "&" in numserie would
+    # add a bogus 5th "param" and break the query string.
+    assert data["verification_url"].split("?", 1)[1].count("&") == 3
 
 
 @pytest.mark.asyncio

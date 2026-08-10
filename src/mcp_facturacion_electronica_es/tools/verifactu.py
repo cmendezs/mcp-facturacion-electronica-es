@@ -2,22 +2,34 @@
 
 VERI*FACTU (Real Decreto 1007/2023, Orden HAC/1177/2024):
     XSD v1.0 (SuministroLR.xsd): specs/verifactu/xsd/
-    Sandbox:    https://prewww2.aeat.es/...
-    Production: https://www2.agenciatributaria.gob.es/...
+    WSDL (RegFactuSistemaFacturacion + ConsultaFactuSistemaFacturacion, same
+    endpoint, "sfVerifactu" binding): specs/verifactu/schemas/SistemaFacturacion.wsdl
+        Sandbox (personal cert):    https://prewww1.aeat.es/wlpl/TIKE-CONT/ws/SistemaFacturacion/VerifactuSOAP
+        Sandbox (Sello cert):       https://prewww10.aeat.es/wlpl/TIKE-CONT/ws/SistemaFacturacion/VerifactuSOAP
+        Production (personal cert): https://www1.agenciatributaria.gob.es/wlpl/TIKE-CONT/ws/SistemaFacturacion/VerifactuSOAP
+        Production (Sello cert):    https://www10.agenciatributaria.gob.es/wlpl/TIKE-CONT/ws/SistemaFacturacion/VerifactuSOAP
+    (Confirmed directly from the WSDL's soap:address entries — the www1/www10
+    and prewww1/prewww10 pairs are the personal-certificate vs. Sello
+    (company seal) certificate variants of the *same* operation, not a
+    primary/secondary failover pair. See VERIFACTU_ENDPOINTS in _helpers.py.)
 
 Namespaces (confirmed from XSD targetNamespace):
     _VF_LR_NS: SuministroLR.xsd   — RegFactuSistemaFacturacion root element
     _VF_SF_NS: SuministroInformacion.xsd — RegistroAlta, RegistroAnulacion, Cabecera, all inner types
 
-Huella (hash chain) — Annex III HAC/1177/2024:
-    SHA-256(hex, uppercase) of:
-    IDEmisorFactura & NumSerieFactura & FechaExpedicionFactura & TipoFactura &
-    CuotaTotal & FechaHoraHusoGenRegistro [& HuellaAnterior if not first]
+Huella (hash chain) — confirmed against Veri-Factu_especificaciones_huella_hash_registros.pdf
+v0.1.2 (specs/verifactu/documentation/), algorithm SHA-256, output hex uppercase (64 chars):
+    RegistroAlta:      IDEmisorFactura=...&NumSerieFactura=...&FechaExpedicionFactura=...&
+                        TipoFactura=...&CuotaTotal=...&ImporteTotal=...&Huella=...&
+                        FechaHoraHusoGenRegistro=...
+    RegistroAnulacion: IDEmisorFacturaAnulada=...&NumSerieFacturaAnulada=...&
+                        FechaExpedicionFacturaAnulada=...&Huella=...&FechaHoraHusoGenRegistro=...
+    (campo=valor pairs joined by "&", in this exact field order; empty Huella= for
+    the genesis record. Golden vectors from the spec's worked examples are in
+    test_verifactu.py.)
 
 EncadenamientoFacturaAnteriorType (SuministroInformacion.xsd) — 4 required fields:
     IDEmisorFactura, NumSerieFactura, FechaExpedicionFactura, Huella
-
-[NEED: verify sandbox endpoint URL once AEAT opens VERI*FACTU test environment]
 """
 
 from __future__ import annotations
@@ -27,6 +39,7 @@ import logging
 from datetime import datetime
 from decimal import Decimal
 from typing import Any
+from urllib.parse import quote_plus
 
 import mcp.types as types
 from lxml import etree
@@ -41,6 +54,7 @@ from mcp_einvoicing_core.xml_utils import safe_fromstring
 from mcp_facturacion_electronica_es._helpers import (
     VERIFACTU_CONSULTA_ENDPOINTS,
     VERIFACTU_ENDPOINTS,
+    VERIFACTU_QR_ENDPOINTS,
     aeat_env,
     err,
     fmt_amount,
@@ -104,10 +118,36 @@ def _build_id_factura(
     emisor_nif: str,
     fecha_es: str,
 ) -> etree._Element:
+    """Build the top-level <IDFactura> block for a RegistroAlta.
+
+    Element names per IDFacturaExpedidaType (SuministroInformacion.xsd).
+    """
     idf = _el("IDFactura")
     _sub(idf, "IDEmisorFactura", emisor_nif)
     _sub(idf, "NumSerieFactura", num_serie)
     _sub(idf, "FechaExpedicionFactura", fecha_es)
+    return idf
+
+
+def _build_id_factura_anulada(
+    num_serie: str,
+    emisor_nif: str,
+    fecha_es: str,
+) -> etree._Element:
+    """Build the top-level <IDFactura> block for a RegistroAnulacion.
+
+    Element names per IDFacturaExpedidaBajaType (SuministroInformacion.xsd) —
+    distinct from RegistroAlta's IDFacturaExpedidaType, using the "*Anulada"
+    suffix: IDEmisorFacturaAnulada, NumSerieFacturaAnulada,
+    FechaExpedicionFacturaAnulada. A prior implementation reused
+    _build_id_factura (the RegistroAlta element names) here, which is
+    structurally invalid against the XSD — same root cause as the
+    RegistroAnulacion huella field-name bug (see _compute_huella_anulacion).
+    """
+    idf = _el("IDFactura")
+    _sub(idf, "IDEmisorFacturaAnulada", emisor_nif)
+    _sub(idf, "NumSerieFacturaAnulada", num_serie)
+    _sub(idf, "FechaExpedicionFacturaAnulada", fecha_es)
     return idf
 
 
@@ -153,17 +193,24 @@ def _compute_huella_anulacion(
 ) -> str:
     """Compute the Huella for a RegistroAnulacion (cancellation) record.
 
-    Per ES-SC-11 (see specs/verifactu/documentation/verifactu-technical-reference.md
-    s2): a dedicated, reduced field set (no ``TipoFactura``, no ``CuotaTotal``)
-    over the same keyed ``campo=valor&`` layout and normalization rules as the
-    RegistroAlta huella. A prior implementation reused the alta canonical
-    string with ``TipoFactura="ANULACION"`` and ``CuotaTotal="0.00"``; neither
-    value exists in the real anulación field set.
+    Per the official AEAT huella spec (Veri-Factu_especificaciones_huella_hash_registros.pdf
+    v0.1.2 s3.b, see specs/verifactu/documentation/), the RegistroAnulacion field
+    set uses the "*Anulada" field names — distinct from the RegistroAlta field
+    names, not a reduced copy of them:
+    IDEmisorFacturaAnulada, NumSerieFacturaAnulada, FechaExpedicionFacturaAnulada,
+    Huella, FechaHoraHusoGenRegistro. Verified against the AEAT worked example in
+    s6.3 of that document (golden vector reproduced in test_verifactu.py).
+
+    A prior implementation used the *alta* field names for this reduced set
+    (``IDEmisorFactura``/``NumSerieFactura``/``FechaExpedicionFactura``), and
+    before that, reused the full alta canonical string with
+    ``TipoFactura="ANULACION"`` and ``CuotaTotal="0.00"``. Both produce a huella
+    that AEAT would reject as "Aceptado con errores" (spec s7).
     """
     parts = [
-        f"IDEmisorFactura={emisor_nif}",
-        f"NumSerieFactura={num_serie}",
-        f"FechaExpedicionFactura={fecha_es}",
+        f"IDEmisorFacturaAnulada={emisor_nif}",
+        f"NumSerieFacturaAnulada={num_serie}",
+        f"FechaExpedicionFacturaAnulada={fecha_es}",
         f"Huella={huella_anterior or ''}",
         f"FechaHoraHusoGenRegistro={fecha_hora_gen}",
     ]
@@ -373,8 +420,119 @@ def _build_consulta_lr(
 
 
 # ---------------------------------------------------------------------------
-# Response parsing helper
+# Chain (re-encadenamiento) contract helpers — ES-LC-12
 # ---------------------------------------------------------------------------
+
+#: EstadoRegistroType values (RespuestaSuministro.xsd) that mean AEAT *stored*
+#: the record under the Huella it was submitted with — safe to chain the next
+#: record's previous_hash from. "AceptadoConErrores" still counts: per the
+#: AEAT huella spec s7, a huella mismatch alone produces this status, not
+#: "Incorrecto" — the record and its Huella both exist in AEAT's registry.
+_CHAIN_SAFE_ESTADOS = frozenset({"Correcto", "AceptadoConErrores"})
+
+
+def _extract_chain_identity(xml_bytes: bytes) -> dict[str, str] | None:
+    """Extract the (emisor_nif, num_serie, fecha, huella) identity of the
+    RegistroAlta/RegistroAnulacion just submitted, for use as the next
+    record's previous_hash/previous_emisor_nif/previous_num_serie/
+    previous_fecha — but only once the caller has confirmed AEAT accepted it
+    (see _CHAIN_SAFE_ESTADOS and handle_es_submit_verifactu_to_aeat).
+
+    Scoped to the RegistroAlta/RegistroAnulacion element's *direct* IDFactura
+    and Huella children — not the same-named fields inside
+    Encadenamiento/RegistroAnterior, which describe the *previous* record.
+    Returns None if the XML cannot be parsed or matched (best-effort; callers
+    must not fail the submission over this).
+    """
+    try:
+        root = safe_fromstring(xml_bytes)
+    except etree.XMLSyntaxError:
+        return None
+
+    anulacion = root.xpath(".//*[local-name()='RegistroAnulacion']")
+    if anulacion:
+        registro = anulacion[0]
+        emisor_tag, serie_tag, fecha_tag = (
+            "IDEmisorFacturaAnulada",
+            "NumSerieFacturaAnulada",
+            "FechaExpedicionFacturaAnulada",
+        )
+    else:
+        alta = root.xpath(".//*[local-name()='RegistroAlta']")
+        if not alta:
+            return None
+        registro = alta[0]
+        emisor_tag, serie_tag, fecha_tag = (
+            "IDEmisorFactura",
+            "NumSerieFactura",
+            "FechaExpedicionFactura",
+        )
+
+    def _direct_child_text(parent: etree._Element, path: str) -> str | None:
+        elems = parent.xpath(f"./*[local-name()='IDFactura']/*[local-name()='{path}']")
+        if elems and elems[0].text:
+            return elems[0].text
+        return None
+
+    emisor_nif = _direct_child_text(registro, emisor_tag)
+    num_serie = _direct_child_text(registro, serie_tag)
+    fecha = _direct_child_text(registro, fecha_tag)
+    huella_elems = registro.xpath("./*[local-name()='Huella']")
+    huella = huella_elems[0].text if huella_elems and huella_elems[0].text else None
+
+    if not all([emisor_nif, num_serie, fecha, huella]):
+        return None
+    return {
+        "emisor_nif": emisor_nif,
+        "num_serie": num_serie,
+        "fecha": fecha,
+        "huella": huella,
+    }
+
+
+def _build_chain_result(
+    parsed_response: dict[str, Any],
+    xml_bytes: bytes,
+) -> dict[str, Any]:
+    """Build the ``chain`` block returned by handle_es_submit_verifactu_to_aeat.
+
+    Enforces the accepted-only chain contract: the identity to use as the
+    *next* record's previous_hash/previous_emisor_nif/previous_num_serie/
+    previous_fecha is only surfaced when this record's EstadoRegistro is
+    Correcto or AceptadoConErrores. A deferred (async) result or an
+    Incorrecto/missing status means the caller must not chain from this
+    record — either poll es__query_verifactu_status first, or fall back to
+    the last previously-accepted record's identity.
+    """
+    estado = parsed_response.get("EstadoRegistro")
+    if parsed_response.get("status") == "deferred":
+        return {
+            "accepted": None,
+            "safe_to_chain_from": None,
+            "note": (
+                "Result deferred by AEAT (TiempoEsperaEnvio) — call "
+                "es__query_verifactu_status before deciding whether to chain "
+                "the next record from this one."
+            ),
+        }
+    if estado in _CHAIN_SAFE_ESTADOS:
+        identity = _extract_chain_identity(xml_bytes)
+        if identity is not None:
+            return {"accepted": True, "safe_to_chain_from": identity}
+        return {
+            "accepted": True,
+            "safe_to_chain_from": None,
+            "note": "Accepted by AEAT, but the record identity could not be re-parsed from the submitted XML.",
+        }
+    return {
+        "accepted": False,
+        "safe_to_chain_from": None,
+        "warning": (
+            f"This record was not accepted by AEAT (EstadoRegistro={estado!r}). "
+            "Do not use its Huella as previous_hash for the next record — chain "
+            "from the last record AEAT actually accepted instead."
+        ),
+    }
 
 
 def _parse_verifactu_response(raw: str) -> dict[str, Any]:
@@ -802,24 +960,43 @@ async def handle_es_validate_verifactu_record(
             if not root.xpath(f".//*[local-name()='{tag}']"):
                 errors.append(f"Elemento obligatorio ausente: <{tag}>")
 
-        # Check mandatory VERI*FACTU elements
-        for tag in [
-            "IDEmisorFactura",
-            "NumSerieFactura",
-            "FechaExpedicionFactura",
-            "TipoFactura",
-            "CuotaTotal",
-            "ImporteTotal",
-            "FechaHoraHusoGenRegistro",
-            "Huella",
-        ]:
+        # RegistroAlta and RegistroAnulacion have different mandatory field
+        # sets (IDFacturaExpedidaType vs IDFacturaExpedidaBajaType, and
+        # RegistroAnulacion has no TipoFactura/CuotaTotal/ImporteTotal at
+        # all) — applying the alta checklist unconditionally previously
+        # produced false "missing element" errors on valid anulación XML.
+        is_anulacion = bool(root.xpath(".//*[local-name()='RegistroAnulacion']"))
+        if is_anulacion:
+            required_tags = [
+                "IDEmisorFacturaAnulada",
+                "NumSerieFacturaAnulada",
+                "FechaExpedicionFacturaAnulada",
+                "FechaHoraHusoGenRegistro",
+                "Huella",
+            ]
+        else:
+            required_tags = [
+                "IDEmisorFactura",
+                "NumSerieFactura",
+                "FechaExpedicionFactura",
+                "TipoFactura",
+                "CuotaTotal",
+                "ImporteTotal",
+                "FechaHoraHusoGenRegistro",
+                "Huella",
+            ]
+        for tag in required_tags:
             _req(tag)
 
         # --- XSD validation (SuministroLR.xsd is the root schema for submissions) ---
         import pathlib  # noqa: PLC0415
 
+        # __file__ = src/mcp_facturacion_electronica_es/tools/verifactu.py — four
+        # .parent hops reach the package root where specs/ lives (a prior
+        # version used three, landing on src/ and silently degrading every
+        # call to structural-only validation).
         xsd_path = (
-            pathlib.Path(__file__).parent.parent.parent
+            pathlib.Path(__file__).parent.parent.parent.parent
             / "specs"
             / "verifactu"
             / "xsd"
@@ -902,6 +1079,8 @@ async def handle_es_submit_verifactu_to_aeat(
                     "status_code": result["status_code"],
                     "environment": env,
                     "parsed_response": parsed,
+                    # ES-LC-12: accepted-only chain contract — see _build_chain_result
+                    "chain": _build_chain_result(parsed, xml_bytes),
                     "note": "Use es__parse_aeat_response for full response parsing.",
                 }
             )
@@ -945,6 +1124,8 @@ async def handle_es_submit_verifactu_to_aeat(
                 "status_code": response.status_code,
                 "environment": env,
                 "parsed_response": parsed,
+                # ES-LC-12: accepted-only chain contract — see _build_chain_result
+                "chain": _build_chain_result(parsed, xml_bytes),
                 "note": "Use es__parse_aeat_response for full response parsing.",
             }
         )
@@ -1060,16 +1241,27 @@ async def handle_es_generate_qr_verifactu(
         if total_amount is None:
             return err("total_amount is required", "MISSING_PARAM")
 
-        # Build verification URL (BOE-A-2024-22138, Art. 21)
-        # Base URL is provisional pending AEAT technical publication on Sede Electronica.
-        # Parameters per Art. 21: NIF, NumSerieFactura, FechaExpedicionFactura, ImporteTotal.
+        # Build verification URL per DetalleEspecificacTecnCodigoQRfactura.pdf s5/s6
+        # (specs/verifactu/documentation/): 4 mandatory params (nif, numserie, fecha,
+        # importe), each URL-encoded individually (s4 — the doc's own worked example
+        # shows a literal "&" inside numserie becoming "%26"); the "?"/"&"/"=" structural
+        # characters themselves stay literal. quote_plus mirrors the doc's Java
+        # URLEncoder.encode(value, "UTF-8") reference implementation (space -> "+",
+        # all reserved characters including "/" percent-encoded).
         fecha_es = fmt_date_es(invoice_date)
         importe = fmt_amount(Decimal(str(total_amount)))
 
-        verification_url = (
-            f"https://prewww2.aeat.es/wlpl/TIKE-CONT/ValidarQR"
-            f"?nif={nif}&numserie={invoice_number}&fecha={fecha_es}&importe={importe}"
+        qr_base_url = VERIFACTU_QR_ENDPOINTS[aeat_env()]
+        query = "&".join(
+            f"{key}={quote_plus(str(value), safe='')}"
+            for key, value in (
+                ("nif", nif),
+                ("numserie", invoice_number),
+                ("fecha", fecha_es),
+                ("importe", importe),
+            )
         )
+        verification_url = f"{qr_base_url}?{query}"
 
         png_b64 = generate_qr_png_base64(verification_url, size_px=size_px, error_correction="M")
 
@@ -1079,6 +1271,7 @@ async def handle_es_generate_qr_verifactu(
             {
                 "qr_png_base64": png_b64,
                 "verification_url": verification_url,
+                "environment": aeat_env(),
                 "mandatory_legends": [
                     "Factura verificable en la sede electrónica de la AEAT",
                     "VERIFACTU",
@@ -1089,7 +1282,8 @@ async def handle_es_generate_qr_verifactu(
                     "symbology": "ISO/IEC 18004",
                     "error_correction_level": "M",
                     "source": (
-                        "specs/verifactu/documentation/verifactu-technical-reference.md s3"
+                        "specs/verifactu/documentation/"
+                        "DetalleEspecificacTecnCodigoQRfactura.pdf s2/s5/s6"
                     ),
                 },
             }
@@ -1138,7 +1332,7 @@ async def handle_es_cancel_verifactu_record(
         # Build RegistroAnulacion
         ra = _el("RegistroAnulacion")
         _sub(ra, "IDVersion", _VERIFACTU_VERSION)
-        ra.append(_build_id_factura(num_serie, issuer_nif, fecha_es))
+        ra.append(_build_id_factura_anulada(num_serie, issuer_nif, fecha_es))
         _sub(ra, "NombreRazonEmisor", issuer_name)
 
         # ES-LC-4: EncadenamientoFacturaAnteriorType requires all 4 identity fields

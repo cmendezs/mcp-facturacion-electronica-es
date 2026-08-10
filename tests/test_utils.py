@@ -238,6 +238,11 @@ def test_face_base_urls_verified() -> None:
 
 
 def test_sii_endpoints_match_bundled_wsdl() -> None:
+    """"sello" (www10/prewww10) is the company-seal-certificate variant of the
+    same operation per the bundled WSDL's own port names
+    (SuministroFactEmitidasSello / SuministroFactRecibidasSello) — not a
+    primary/secondary failover pair. Renamed from "secondary" after the same
+    mislabeling was found and fixed on the VeriFactu endpoint map."""
     from mcp_facturacion_electronica_es._helpers import (
         SII_ISSUED_ENDPOINTS,
         SII_RECEIVED_ENDPOINTS,
@@ -246,7 +251,7 @@ def test_sii_endpoints_match_bundled_wsdl() -> None:
     assert SII_ISSUED_ENDPOINTS["production"]["primary"] == (
         "https://www1.agenciatributaria.gob.es/wlpl/SSII-FACT/ws/fe/SiiFactFEV1SOAP"
     )
-    assert SII_ISSUED_ENDPOINTS["production"]["secondary"] == (
+    assert SII_ISSUED_ENDPOINTS["production"]["sello"] == (
         "https://www10.agenciatributaria.gob.es/wlpl/SSII-FACT/ws/fe/SiiFactFEV1SOAP"
     )
     assert SII_ISSUED_ENDPOINTS["sandbox"]["primary"] == (
@@ -260,6 +265,6 @@ def test_sii_endpoints_match_bundled_wsdl() -> None:
     )
     for env in ("sandbox", "production"):
         assert "primary" in SII_ISSUED_ENDPOINTS[env]
-        assert "secondary" in SII_ISSUED_ENDPOINTS[env]
+        assert "sello" in SII_ISSUED_ENDPOINTS[env]
         assert "primary" in SII_RECEIVED_ENDPOINTS[env]
-        assert "secondary" in SII_RECEIVED_ENDPOINTS[env]
+        assert "sello" in SII_RECEIVED_ENDPOINTS[env]

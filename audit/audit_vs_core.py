@@ -134,6 +134,11 @@ _INTENTIONAL_OVERRIDES: dict[str, set[str]] = {
         "field_validator",
         "parsedate_to_datetime",
         "urlparse",
+        # OVERRIDE-REASON: internal retry-delay helper used by http_client.py's
+        # BaseEInvoicingClient and signer_service.py's _do_mtls_submit
+        # themselves (core v1.16.1); country packages get retry behaviour
+        # transparently through those, not by calling it directly.
+        "compute_retry_delay",
     },
     "mcp_einvoicing_core.exceptions": {
         # OVERRIDE-REASON: ES uses plain EInvoicingError, not specialised exception subclasses
