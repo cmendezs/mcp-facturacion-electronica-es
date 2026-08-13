@@ -52,7 +52,9 @@ large taxpayers under a 4-day communication window. Facturae XML with XAdES-EPES
 covers all B2G invoicing through the FACe portal. The Basque Country applies TicketBAI
 independently, with three provincial authorities each maintaining their own XSD schemas and
 endpoints. Navarre operates NaTicket. The Ley Crea y Crece mandates B2B e-invoicing for
-all businesses, with the format still pending implementing regulations. Regime detection
+all businesses; RD 238/2026 (BOE-A-2026-7295) confirms the admitted formats (EN 16931:
+CII/UBL/EDIFACT/Facturae), while the Orden Ministerial developing the public-solution
+technical package is still pending. Regime detection
 based on tax domicile and turnover is a prerequisite to all other operations: use
 `es__detect_regional_regime` first.
 
@@ -66,7 +68,7 @@ based on tax domicile and turnover is a prerequisite to all other operations: us
 | **Facturae / FACe** | B2G (public sector) | Facturae 3.2.2 + XAdES-EPES | Mandatory since 2015 (Ley 25/2013) | Implemented (pending regulatory confirmation) |
 | **SII** | Turnover >6M EUR, VAT groups, REDEME | XML SOAP/REST AEAT | Already mandatory (RD 596/2016) | Implemented (pending regulatory confirmation) |
 | **TicketBAI** | Araba, Gipuzkoa, Bizkaia | Provincial XML + XAdES + QR | By province, 2022-2023 | Removed from scope (v0.2.0) |
-| **Crea y Crece (B2B)** | All businesses (threshold pending) | UBL 2.1 or Facturae 3.2.2 (EN 16931) | Implementing regulations pending | Implemented (pending regulatory confirmation) |
+| **Crea y Crece (B2B)** | All businesses (12/24 months after OM, by turnover) | UBL 2.1 or Facturae 3.2.2 (EN 16931); CII/EDIFACT also admitted, not implemented | RD 238/2026 published; Orden Ministerial (public solution) pending | Implemented (formats confirmed by RD 238/2026; public-solution wiring deferred to OM) |
 | **NaTicket** | Navarre | Foral XML + signature | Foral mandate (phased rollout) | Partial (via `es__detect_regional_regime`) |
 
 > **SII / VERI\*FACTU mutual exclusion (Real Decreto 254/2025):** Taxpayers enrolled in
@@ -485,7 +487,7 @@ Validates a TicketBAI XML document against the correct provincial XSD. The schem
 #### `es__generate_b2b_einvoice_es`
 
 Generates a B2B invoice conforming to EN 16931 in UBL 2.1 or Facturae 3.2.2 format
-per Ley 18/2022.
+per Ley 18/2022, developed by RD 238/2026 (BOE-A-2026-7295).
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
@@ -496,7 +498,9 @@ per Ley 18/2022.
 { "tool": "es__generate_b2b_einvoice_es", "arguments": { "invoice": { "date": "2025-03-15", "number": "2025-0042" }, "format": "ubl" } }
 ```
 
-> ⚠️ Pending regulatory confirmation: the B2B mandate implementing regulations have not been published yet.
+> ⚠️ RD 238/2026 confirms the admitted formats (EN 16931: CII/UBL/EDIFACT/Facturae; this
+> tool implements UBL and Facturae). The Orden Ministerial (Hacienda) developing the
+> public-solution technical package (Disp. final tercera) is still pending.
 
 ---
 
@@ -707,7 +711,8 @@ mcp-einvoicing-core (v0.1.0+)
 | TicketBAI | All businesses in the Basque Country | Phased rollout by sector 2022-2023 |
 | VERI\*FACTU | IS (Impuesto sobre Sociedades) taxpayers | **January 2027** (RD-ley 15/2025) |
 | VERI\*FACTU | IRPF + other non-SII | **July 2027** (RD-ley 15/2025) |
-| Crea y Crece B2B | All businesses | Pending, implementing regulations not yet published |
+| Crea y Crece B2B | Turnover >8M EUR (art. 121 Ley 37/1992) | **12 months** after the Orden Ministerial's entry into force `[Unverified date]` |
+| Crea y Crece B2B | All other businesses | **24 months** after the Orden Ministerial's entry into force `[Unverified date]` |
 
 ### Regional exceptions
 

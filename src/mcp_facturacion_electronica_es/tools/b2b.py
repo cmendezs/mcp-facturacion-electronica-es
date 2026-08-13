@@ -1,15 +1,27 @@
 """MCP tools: Crea y Crece / B2B — factura B2B y comprobación de mandato.
 
-Ley 18/2022 'Crea y Crece':
+Ley 18/2022 'Crea y Crece', developed by RD 238/2026 (BOE-A-2026-7295, published
+2026-03-31, in force 2026-04-20):
     Mandates EN 16931-compliant e-invoicing for all B2B transactions.
-    Format: UBL 2.1 or Facturae 3.2.2.
-    Implementing decree: PENDING as of May 2026.
+    Admitted syntaxes (RD 238/2026 art. 7.1): CII, UBL (with B2B adaptations),
+    EDIFACT invoice message, Facturae message. This package implements UBL and
+    Facturae; CII and EDIFACT are legally admitted but have no emitter here.
+    UBL is mandatory for the faithful-copy obligation to the public solution
+    (art. 6.2) when a private platform is used to emit.
+    Advanced electronic signature required (art. 7.3, per RD 1619/2012 art. 10.1.a).
+    Unique invoice code required: issuer NIF + invoice number/series + issue date
+    (art. 7.5) — exact insertion into the syntax is deferred to the OM below.
+    Still pending: the Orden Ministerial (Hacienda) developing the public-solution
+    technical package (XSD/WSDL/API, UBL usage terms, unique-code insertion —
+    Disp. final tercera). Effective-application dates (Disp. final cuarta) are
+    12/24 months after the OM's own entry into force, not fixed calendar dates.
+    See `context-library/countries/es.md` "B2B mandate (Crea y Crece)" (root repo).
 
 Mutual exclusion (Royal Decree 254/2025):
     SII-enrolled taxpayers are exempt from VERI*FACTU.
     Always call es__check_b2b_mandate_applicability before generating records.
 
-[NEED: confirm format requirements once implementing decree is published]
+[NEED: verify Orden Ministerial (Hacienda) publication + effective dates]
 """
 
 from __future__ import annotations
@@ -32,6 +44,11 @@ from mcp_facturacion_electronica_es.tools.utils import (
 )
 
 logger = logging.getLogger(__name__)
+
+# RD 238/2026 Disp. final cuarta §1: turnover threshold (art. 121 Ley 37/1992) that
+# determines the 12- vs 24-month post-OM timeline. Distinct from the €6M SII threshold
+# in tools/utils.py — do not conflate the two.
+_B2B_MANDATE_TURNOVER_THRESHOLD_EUR = 8_000_000
 
 # UBL 2.1 namespaces
 _UBL_INVOICE_NS = "urn:oasis:names:specification:ubl:schema:xsd:Invoice-2"
@@ -67,6 +84,9 @@ def build_ubl_invoice(invoice: InvoiceDocument) -> bytes:
     }
     root = etree.Element(f"{{{_UBL_INVOICE_NS}}}Invoice", nsmap=nsmap)
 
+    # CustomizationID/ProfileID below are [Inference: Peppol BIS 3.0] pending the RD
+    # 238/2026 Orden Ministerial's "UBL usage terms" (art. 7.1.b / Disp. final tercera
+    # §1) and the public-solution UBL usage terms. No emitter rewrite until the OM lands.
     _sub(
         root,
         _CBC_NS,
@@ -190,7 +210,8 @@ TOOL_ES_GENERATE_B2B_EINVOICE_ES = types.Tool(
     description=(
         "Genera una factura B2B conforme a EN 16931 en formato UBL 2.1 o Facturae 3.2.2 "
         "según la Ley 18/2022 'Crea y Crece'. "
-        "El reglamento de desarrollo está pendiente de publicación."
+        "RD 238/2026 publicado; formatos confirmados (EN 16931: CII/UBL/EDIFACT/Facturae). "
+        "Orden Ministerial (Hacienda) pendiente para la solución pública."
     ),
     inputSchema={
         "type": "object",
@@ -278,8 +299,10 @@ async def handle_es_generate_b2b_einvoice_es(
                 "schema": schema_desc,
                 "invoice_number": invoice.number,
                 "disclaimer": (
-                    "El reglamento de desarrollo de la Ley 18/2022 (Crea y Crece) está pendiente "
-                    "de publicación. El formato definitivo puede variar."
+                    "RD 238/2026 publicado; formatos confirmados (EN 16931: CII/UBL/EDIFACT/"
+                    "Facturae). Orden Ministerial (Hacienda) pendiente para la solución pública "
+                    "(codificación única, condiciones de acceso). El formato definitivo de la "
+                    "copia fiel remitida a la solución pública será UBL (art. 6.2 RD 238/2026)."
                 ),
             }
         )
@@ -352,8 +375,16 @@ async def handle_es_check_b2b_mandate_applicability(
         # Facturae/FACe always applies for B2G
         applicable_systems.append("Facturae / FACe (obligatorio para facturas B2G desde 2015)")
 
-        # Crea y Crece (pending)
-        applicable_systems.append("B2B Crea y Crece (Ley 18/2022, reglamento pendiente)")
+        # Crea y Crece — RD 238/2026 (BOE-A-2026-7295) confirms the format/signature/
+        # unique-code rules; the Orden Ministerial (Hacienda) for the public solution
+        # is still pending (Disp. final tercera).
+        applicable_systems.append(
+            "B2B Crea y Crece (Ley 18/2022 + RD 238/2026; solución pública pendiente "
+            "de Orden Ministerial)"
+        )
+
+        turnover_exceeds_8m = float(turnover) > _B2B_MANDATE_TURNOVER_THRESHOLD_EUR
+        b2b_months_after_om = 12 if turnover_exceeds_8m else 24
 
         return ok(
             {
@@ -365,14 +396,38 @@ async def handle_es_check_b2b_mandate_applicability(
                 "applicable_systems": applicable_systems,
                 "notes": notes,
                 "sii_exclusion_applies": regime == SpanishRegime.VERIFACTU_SII,
-                "b2b_format_resolved": False,
+                "b2b_syntaxes_confirmed": ["CII", "UBL", "EDIFACT", "Facturae"],
+                "b2b_syntaxes_implemented": ["UBL", "Facturae"],
+                "b2b_public_solution_pending": True,
                 "b2b_format_note": (
-                    "El formato B2B definitivo (UBL 2.1 vs Facturae 3.2.2) está pendiente "
-                    "de la Orden Ministerial bajo Ley 18/2022."
+                    "Sintaxis admitidas confirmadas por RD 238/2026 art. 7.1 (EN 16931: "
+                    "CII/UBL/EDIFACT/Facturae); este paquete implementa UBL y Facturae. "
+                    "UBL es obligatorio para la copia fiel a la solución pública cuando se "
+                    "emite por plataforma privada (art. 6.2). Firma electrónica avanzada "
+                    "requerida (art. 7.3). Código único de factura requerido: NIF emisor + "
+                    "número/serie + fecha de expedición (art. 7.5); su inserción exacta en "
+                    "la sintaxis está pendiente de la Orden Ministerial "
+                    "[NEED: wire once OM confirms exact codification]."
                 ),
+                "b2b_mandate_timeline": {
+                    "basis": "RD 238/2026 Disp. final cuarta — offsets are relative to the "
+                    "Orden Ministerial's own entry into force, not fixed calendar dates.",
+                    "om_entry_into_force_date": "[Unverified]",
+                    "turnover_threshold_eur": _B2B_MANDATE_TURNOVER_THRESHOLD_EUR,
+                    "this_taxpayer_months_after_om": b2b_months_after_om,
+                    "over_8m_turnover_months_after_om": 12,
+                    "other_taxpayers_months_after_om": 24,
+                    "platform_operator_obligations_months_after_om": 12,
+                    "note": (
+                        "8M€ threshold (art. 121 Ley 37/1992) is distinct from the €6M SII "
+                        "threshold above — do not conflate. No absolute dates are computed "
+                        "until the OM publishes its entry-into-force date."
+                    ),
+                },
                 "disclaimer": (
-                    "Según RD-ley 15/2025 y RD 254/2025. "
-                    "Sujeto a cambios por legislación posterior. "
+                    "Según RD-ley 15/2025, RD 254/2025 y RD 238/2026. "
+                    "Sujeto a cambios por legislación posterior, en particular la Orden "
+                    "Ministerial pendiente de la disposición final tercera del RD 238/2026. "
                     "No constituye asesoramiento jurídico ni fiscal."
                 ),
             }

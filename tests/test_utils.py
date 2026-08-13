@@ -190,6 +190,41 @@ async def test_handle_check_b2b_mandate_applicability_sii_exclusion() -> None:
     assert data["primary_regime"] == SpanishRegime.VERIFACTU_SII
     assert data["sii_exclusion_applies"] is True
 
+    # RD 238/2026: syntaxes confirmed, public solution still pending on the OM.
+    assert data["b2b_syntaxes_confirmed"] == ["CII", "UBL", "EDIFACT", "Facturae"]
+    assert data["b2b_syntaxes_implemented"] == ["UBL", "Facturae"]
+    assert data["b2b_public_solution_pending"] is True
+
+    # Turnover (10M) exceeds the 8M€ B2B threshold (distinct from the 6M€ SII
+    # threshold above) -> 12-month post-OM timeline.
+    timeline = data["b2b_mandate_timeline"]
+    assert timeline["this_taxpayer_months_after_om"] == 12
+    assert timeline["over_8m_turnover_months_after_om"] == 12
+    assert timeline["other_taxpayers_months_after_om"] == 24
+    assert timeline["om_entry_into_force_date"] == "[Unverified]"
+    # No absolute mandate dates should be emitted anywhere in the payload.
+    assert "2026-10" not in json.dumps(data)
+    assert "2027" not in json.dumps(data["b2b_mandate_timeline"])
+
+
+@pytest.mark.asyncio
+async def test_handle_check_b2b_mandate_applicability_below_8m_threshold() -> None:
+    from mcp_facturacion_electronica_es.tools.b2b import handle_es_check_b2b_mandate_applicability
+
+    result = await handle_es_check_b2b_mandate_applicability(
+        {
+            "annual_turnover_eur": 1_000_000,
+            "tax_address_province_code": "28",
+            "enrolled_in_sii": False,
+            "entity_type": "IS",
+        }
+    )
+    import json
+
+    data = json.loads(result[0].text)
+    timeline = data["b2b_mandate_timeline"]
+    assert timeline["this_taxpayer_months_after_om"] == 24
+
 
 @pytest.mark.asyncio
 async def test_handle_parse_aeat_response_verifactu() -> None:

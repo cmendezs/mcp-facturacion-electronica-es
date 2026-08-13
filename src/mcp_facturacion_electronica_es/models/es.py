@@ -58,8 +58,10 @@ class SIICommunicationType(StrEnum):
 
 
 class B2BFormat(StrEnum):
-    """Output format for Crea y Crece B2B e-invoices (Ley 18/2022)."""
+    """Output format for Crea y Crece B2B e-invoices (Ley 18/2022 + RD 238/2026)."""
 
+    # RD 238/2026 art. 7.1 also admits CII and EDIFACT, but no emitter exists for
+    # either here; do not add enum members without an emitter behind them.
     ubl = "ubl"
     facturae = "facturae"
 

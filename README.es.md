@@ -53,8 +53,10 @@ El SII ya es obligatorio para grandes contribuyentes bajo una ventana de comunic
 4 días. Facturae XML con firma XAdES-EPES cubre toda la facturación B2G a través del portal
 FACe. El País Vasco aplica TicketBAI de forma independiente, con tres autoridades provinciales
 que mantienen cada una sus propios esquemas XSD y endpoints. Navarra opera NaTicket. La Ley
-Crea y Crece exige la facturación electrónica B2B para todas las empresas, con formato
-pendiente del reglamento de desarrollo. La detección del régimen a partir del domicilio
+Crea y Crece exige la facturación electrónica B2B para todas las empresas; el RD 238/2026
+(BOE-A-2026-7295) confirma los formatos admitidos (EN 16931: CII/UBL/EDIFACT/Facturae),
+mientras que la Orden Ministerial que desarrolla el paquete técnico de la solución pública
+sigue pendiente. La detección del régimen a partir del domicilio
 fiscal y el volumen de operaciones es un requisito previo a todas las demás operaciones:
 utilice `es__detect_regional_regime` en primer lugar.
 
@@ -68,7 +70,7 @@ utilice `es__detect_regional_regime` en primer lugar.
 | **Facturae / FACe** | B2G (sector público) | Facturae 3.2.2 + XAdES-EPES | Obligatorio desde 2015 (Ley 25/2013) | Implementado (pendiente de confirmacion regulatoria) |
 | **SII** | Facturación >6M EUR, grupos IVA, REDEME | XML SOAP/REST AEAT | Ya obligatorio (RD 596/2016) | Implementado (pendiente de confirmacion regulatoria) |
 | **TicketBAI** | Araba, Gipuzkoa, Bizkaia | XML provincial + XAdES + QR | Según provincia, 2022-2023 | Eliminado del alcance (v0.2.0) |
-| **Crea y Crece (B2B)** | Todas las empresas (umbral pendiente) | UBL 2.1 o Facturae 3.2.2 (EN 16931) | Reglamento de desarrollo pendiente | Implementado (pendiente de confirmacion regulatoria) |
+| **Crea y Crece (B2B)** | Todas las empresas (12/24 meses tras la OM, según facturación) | UBL 2.1 o Facturae 3.2.2 (EN 16931); CII/EDIFACT también admitidos, no implementados | RD 238/2026 publicado; Orden Ministerial (solución pública) pendiente | Implementado (formatos confirmados por RD 238/2026; solución pública pendiente de la OM) |
 | **NaTicket** | Navarra | XML foral + firma | Mandato foral (implantacion escalonada) | Parcial (via `es__detect_regional_regime`) |
 
 > **Exclusion mutua SII / VERI\*FACTU (Real Decreto 254/2025):** Los contribuyentes
@@ -495,7 +497,7 @@ Valida un documento XML TicketBAI contra el XSD provincial correcto. Los esquema
 #### `es__generate_b2b_einvoice_es`
 
 Genera una factura B2B conforme a EN 16931 en formato UBL 2.1 o Facturae 3.2.2 segun
-la Ley 18/2022.
+la Ley 18/2022, desarrollada por el RD 238/2026 (BOE-A-2026-7295).
 
 | Parametro | Tipo | Obligatorio | Descripcion |
 |---|---|---|---|
@@ -506,7 +508,9 @@ la Ley 18/2022.
 { "tool": "es__generate_b2b_einvoice_es", "arguments": { "invoice": { "date": "2025-03-15", "number": "2025-0042" }, "format": "ubl" } }
 ```
 
-> ⚠️ Pendiente de confirmacion regulatoria: el reglamento de desarrollo del mandato B2B no esta publicado aun.
+> ⚠️ El RD 238/2026 confirma los formatos admitidos (EN 16931: CII/UBL/EDIFACT/Facturae;
+> esta herramienta implementa UBL y Facturae). La Orden Ministerial (Hacienda) que
+> desarrolla el paquete técnico de la solución pública (Disp. final tercera) sigue pendiente.
 
 ---
 
@@ -717,7 +721,8 @@ mcp-einvoicing-core (v0.1.0+)
 | TicketBAI | Todas las empresas del Pais Vasco | Implantacion sectorial 2022-2023 |
 | VERI\*FACTU | Contribuyentes IS (Impuesto sobre Sociedades) | **Enero 2027** (RD-ley 15/2025) |
 | VERI\*FACTU | IRPF + otros no-SII | **Julio 2027** (RD-ley 15/2025) |
-| Crea y Crece B2B | Todas las empresas | Pendiente, reglamento de desarrollo sin publicar |
+| Crea y Crece B2B | Facturacion >8M EUR (art. 121 Ley 37/1992) | **12 meses** tras la entrada en vigor de la Orden Ministerial `[Fecha no verificada]` |
+| Crea y Crece B2B | Resto de empresas | **24 meses** tras la entrada en vigor de la Orden Ministerial `[Fecha no verificada]` |
 
 ### Excepciones regionales
 
