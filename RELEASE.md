@@ -41,6 +41,43 @@ mcp-publisher publish
 
 ## Changelog
 
+### [0.7.0] - 2026-08-13
+
+RD 238/2026 (BOE-A-2026-7295), the reglamento developing the Ley 18/2022 "Crea y Crece"
+B2B e-invoicing mandate, was published 2026-03-31 and entered into force 2026-04-20. This
+release wires the now-confirmable parts of it into `tools/b2b.py`; the public-solution
+technical package (XSD/WSDL/API, unique-code insertion, UBL usage terms) remains deferred
+to the still-pending Orden Ministerial (Hacienda) per Disp. final tercera.
+
+#### Changed
+- **[ES-CYC-1]** `es__check_b2b_mandate_applicability` no longer returns the flat
+  `b2b_format_resolved: False` / `b2b_format_note` pair. It now returns:
+  - `b2b_syntaxes_confirmed`: the four EN 16931 syntaxes admitted by RD 238/2026 art. 7.1
+    (CII, UBL, EDIFACT, Facturae).
+  - `b2b_syntaxes_implemented`: `["UBL", "Facturae"]` — this package's actual emitters.
+  - `b2b_public_solution_pending: true` — the AEAT public solution still awaits the OM.
+  - `b2b_mandate_timeline`: an OM-relative 12/24-month timeline keyed off the 8M EUR
+    turnover threshold (art. 121 Ley 37/1992, RD 238/2026 Disp. final cuarta) — distinct
+    from the 6M EUR SII threshold used elsewhere in this handler. No absolute dates are
+    emitted; the OM's own entry-into-force date is unverified.
+  - `b2b_format_note` now cites the confirmed UBL faithful-copy obligation (art. 6.2),
+    advanced-signature requirement (art. 7.3), and unique invoice-code rule (art. 7.5).
+- `es__generate_b2b_einvoice_es` description and response `disclaimer` updated to cite
+  RD 238/2026 instead of "reglamento pendiente de publicación".
+- `build_ubl_invoice`: added a comment flagging `CustomizationID`/`ProfileID` as
+  `[Inference: Peppol BIS 3.0]` pending the OM's UBL usage terms — no emitter rewrite yet.
+- `B2BFormat` enum comment notes CII/EDIFACT are legally admitted (art. 7.1) but have no
+  emitter in this package.
+
+#### Added
+- Bundled `specs/crea-y-crece/documentation/BOE-A-2026-7295-consolidado.pdf` (the
+  consolidated RD 238/2026 text), alongside the existing Ley 18/2022 primary-law PDF.
+- Two new tests covering the confirmed-syntax response shape and both branches of the
+  8M EUR-threshold mandate timeline.
+
+All article citations verified directly against the consolidated BOE-A-2026-7295 text.
+146 tests passing / 4 skipped, ruff clean, audit gate PASS 0 blocking / 0 warnings.
+
 ### [0.6.1] - 2026-08-09
 
 The project owner supplied the official AEAT VeriFactu documents (huella spec, QR spec, web
