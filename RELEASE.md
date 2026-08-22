@@ -41,6 +41,43 @@ mcp-publisher publish
 
 ## Changelog
 
+### [0.8.0] - 2026-08-22
+
+ARCH-CONVERGE-ES: server-wiring convergence to `EInvoicingMCPServer`, the fourth and final
+convergence item after BE/PL/DE. Pure internal wiring refactor; no functional or regulatory
+behavior changed.
+
+#### Changed
+- `server.py` rewritten from the raw `mcp.server.Server` protocol API (hand-rolled
+  `types.Tool` JSON schemas, `handle_es_*` functions taking `arguments: dict` and returning
+  `list[types.TextContent]`) to `EInvoicingMCPServer`/`register_plugin`.
+- All 20 tools across `tools/{verifactu,facturae,sii,b2b,utils}.py` converted from
+  `TOOL_ES_*`/`handle_es_*` pairs to typed FastMCP functions taking direct keyword
+  parameters and returning plain dicts. Tool names are unchanged
+  (`es__generate_verifactu_record`, etc.): the Python function names were set identically
+  to the published tool names to protect the existing public tool-name surface. Docstrings
+  kept in Spanish, matching this package's established convention.
+- `_helpers.py`'s `ok()`/`err()` now return plain dicts instead of wrapping in
+  `list[types.TextContent]`.
+- `audit/audit_vs_core.py`: `EInvoicingMCPServer` removed from the "unused" override list
+  (now genuinely used); CHECK 2 rewritten from `TOOL_ES_*.name` lookups to plain-function
+  `hasattr` checks; CHECK 5's `_ALL_TOOLS`/`_TOOL_HANDLERS` dict-sync check replaced with
+  the `server.mcp` `EInvoicingMCPServer`-instance check.
+
+#### Not changed
+- No Peppol tool plugin mounted, unlike BE/PL/DE. ES has no Peppol involvement
+  (SII/VeriFactu/FACe are domestic AEAT systems only); documented in the audit script's
+  own `_INTENTIONAL_OVERRIDES` rationale.
+
+#### Fixed
+- Two pre-existing, unrelated audit warnings closed, surfaced by the core 1.16.2 to 1.19.0
+  version installed in the dev venv: `Union` (`pdf` module re-export) and `resolve_naptr`
+  (`peppol` module).
+
+146 tests passing / 4 skipped, ruff clean, audit gate PASS 0 blocking / 0 warnings. Server
+boot-checked directly (`mcp.mcp.list_tools()`): all 20 tools registered under their
+original names.
+
 ### [0.7.0] - 2026-08-13
 
 RD 238/2026 (BOE-A-2026-7295), the reglamento developing the Ley 18/2022 "Crea y Crece"
