@@ -20,7 +20,6 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-import mcp.types as types
 from lxml import etree
 from mcp_einvoicing_core.xml_utils import safe_fromstring
 
@@ -149,103 +148,32 @@ def _detect_regime(
 # Tool definitions
 # ---------------------------------------------------------------------------
 
-TOOL_ES_DETECT_REGIONAL_REGIME = types.Tool(
-    name="es__detect_regional_regime",
-    description=(
-        "Detecta el régimen de facturación electrónica aplicable a partir del código de provincia "
-        "INE de dos dígitos. Devuelve VERIFACTU, TICKETBAI, NATICKET o VERIFACTU+SII. "
-        "Usar siempre antes de llamar a cualquier otra herramienta de este servidor."
-    ),
-    inputSchema={
-        "type": "object",
-        "properties": {
-            "province_code": {
-                "type": "string",
-                "description": "Código de provincia INE de dos dígitos (p. ej., '28', '01', '31').",
-                "pattern": "^[0-9]{1,2}$",
-            },
-            "enrolled_in_sii": {
-                "type": "boolean",
-                "description": "Inscripción en el SII (por defecto: false).",
-                "default": False,
-            },
-        },
-        "required": ["province_code"],
-    },
-)
-
-TOOL_ES_GET_COMPLIANCE_STATUS = types.Tool(
-    name="es__get_compliance_status",
-    description=(
-        "Devuelve los plazos de mandato vigentes y el sistema operativo para un perfil de empresa. "
-        "Refleja el RD-ley 15/2025 — sujeto a cambios por legislación posterior."
-    ),
-    inputSchema={
-        "type": "object",
-        "properties": {
-            "entity_type": {
-                "type": "string",
-                "enum": ["IS", "IRPF"],
-                "description": "Tipo de obligado tributario.",
-            },
-            "province_code": {
-                "type": "string",
-                "description": "Código de provincia INE de dos dígitos.",
-                "pattern": "^[0-9]{1,2}$",
-            },
-            "annual_turnover_eur": {
-                "type": "number",
-                "description": "Volumen anual de operaciones IVA en EUR (para umbral SII > €6M).",
-            },
-            "enrolled_in_sii": {
-                "type": "boolean",
-                "description": "Inscripción en el SII.",
-                "default": False,
-            },
-        },
-        "required": ["entity_type", "province_code"],
-    },
-)
-
-TOOL_ES_PARSE_AEAT_RESPONSE = types.Tool(
-    name="es__parse_aeat_response",
-    description=(
-        "Analiza y normaliza una respuesta XML de la AEAT (VERI*FACTU o SII) a JSON estructurado. "
-        "Extrae EstadoEnvio, CSV (código seguro de verificación) y detalle de errores."
-    ),
-    inputSchema={
-        "type": "object",
-        "properties": {
-            "xml": {
-                "type": "string",
-                "description": "Respuesta XML de la AEAT en crudo.",
-            },
-            "response_type": {
-                "type": "string",
-                "enum": ["verifactu", "sii"],
-                "description": "Tipo de respuesta a analizar (por defecto: 'verifactu').",
-                "default": "verifactu",
-            },
-        },
-        "required": ["xml"],
-    },
-)
-
 # ---------------------------------------------------------------------------
-# Handlers
+# Tools
 # ---------------------------------------------------------------------------
 
 
-async def handle_es_detect_regional_regime(
-    arguments: dict[str, Any],
-) -> list[types.TextContent]:
-    """Detect the applicable e-invoicing regime from INE province code."""
+async def es__detect_regional_regime(
+    province_code: str,
+    enrolled_in_sii: bool = False,
+) -> dict[str, Any]:
+    """Detecta el régimen de facturación electrónica aplicable.
+
+    A partir del código de provincia INE de dos dígitos. Devuelve VERIFACTU,
+    TICKETBAI, NATICKET o VERIFACTU+SII. Usar siempre antes de llamar a
+    cualquier otra herramienta de este servidor.
+
+    Args:
+        province_code: Código de provincia INE de dos dígitos (p. ej.,
+            '28', '01', '31').
+        enrolled_in_sii: Inscripción en el SII (por defecto: false).
+    """
     try:
-        province_code = str(arguments.get("province_code", "")).strip()
+        province_code = str(province_code).strip()
         if not province_code:
             return err("province_code is required", "MISSING_PARAM")
 
-        enrolled = bool(arguments.get("enrolled_in_sii", False))
+        enrolled = bool(enrolled_in_sii)
         regime = _detect_regime(province_code, enrolled)
 
         descriptions: dict[SpanishRegime, str] = {
@@ -284,20 +212,32 @@ async def handle_es_detect_regional_regime(
         return err(str(exc))
 
 
-async def handle_es_get_compliance_status(
-    arguments: dict[str, Any],
-) -> list[types.TextContent]:
-    """Return mandate deadlines and applicable systems for a company profile."""
+async def es__get_compliance_status(
+    entity_type: str,
+    province_code: str,
+    annual_turnover_eur: float | None = None,
+    enrolled_in_sii: bool = False,
+) -> dict[str, Any]:
+    """Devuelve los plazos de mandato vigentes y el sistema operativo para un perfil de empresa.
+
+    Refleja el RD-ley 15/2025 — sujeto a cambios por legislación posterior.
+
+    Args:
+        entity_type: Tipo de obligado tributario: 'IS' o 'IRPF'.
+        province_code: Código de provincia INE de dos dígitos.
+        annual_turnover_eur: Volumen anual de operaciones IVA en EUR
+            (para umbral SII > €6M).
+        enrolled_in_sii: Inscripción en el SII.
+    """
     try:
-        entity_type_str = arguments.get("entity_type", "IS")
-        province_code = str(arguments.get("province_code", "28")).strip()
-        turnover = arguments.get("annual_turnover_eur")
-        enrolled = bool(arguments.get("enrolled_in_sii", False))
+        province_code = str(province_code).strip()
+        turnover = annual_turnover_eur
+        enrolled = bool(enrolled_in_sii)
 
         try:
-            entity_type = EntityType(entity_type_str)
+            entity_type_enum = EntityType(entity_type)
         except ValueError:
-            return err(f"Invalid entity_type: {entity_type_str!r}. Must be 'IS' or 'IRPF'.")
+            return err(f"Invalid entity_type: {entity_type!r}. Must be 'IS' or 'IRPF'.")
 
         regime = _detect_regime(province_code, enrolled, annual_turnover_eur=turnover)
 
@@ -343,12 +283,12 @@ async def handle_es_get_compliance_status(
             )
         else:
             # VERIFACTU
-            key = "VERIFACTU_IS" if entity_type == EntityType.IS else "VERIFACTU_IRPF"
+            key = "VERIFACTU_IS" if entity_type_enum == EntityType.IS else "VERIFACTU_IRPF"
             applicable_systems.append(
                 {
                     "scope": (
                         "Impuesto sobre Sociedades"
-                        if entity_type == EntityType.IS
+                        if entity_type_enum == EntityType.IS
                         else "IRPF / autónomos y otros no-SII"
                     ),
                     **_MANDATE_DATES[key],
@@ -356,7 +296,7 @@ async def handle_es_get_compliance_status(
             )
 
         result: dict[str, Any] = {
-            "entity_type": entity_type.value,
+            "entity_type": entity_type_enum.value,
             "province_code": province_code,
             "enrolled_in_sii": enrolled,
             "detected_regime": regime.value,
@@ -384,24 +324,28 @@ async def handle_es_get_compliance_status(
         return err(str(exc))
 
 
-async def handle_es_parse_aeat_response(
-    arguments: dict[str, Any],
-) -> list[types.TextContent]:
-    """Parse an AEAT XML response (VERI*FACTU or SII) into structured JSON."""
+async def es__parse_aeat_response(
+    xml: str,
+    response_type: str = "verifactu",
+) -> dict[str, Any]:
+    """Analiza y normaliza una respuesta XML de la AEAT (VERI*FACTU o SII) a JSON estructurado.
+
+    Extrae EstadoEnvio, CSV (código seguro de verificación) y detalle de errores.
+
+    Args:
+        xml: Respuesta XML de la AEAT en crudo.
+        response_type: Tipo de respuesta a analizar (por defecto: 'verifactu').
+    """
     try:
-        xml_str = arguments.get("xml", "")
-        if not xml_str:
+        if not xml:
             return err("xml is required", "MISSING_PARAM")
 
-        response_type_str = arguments.get("response_type", "verifactu")
         try:
-            response_type = AEATResponseType(response_type_str)
+            response_type_enum = AEATResponseType(response_type)
         except ValueError:
-            return err(
-                f"Invalid response_type: {response_type_str!r}. Must be 'verifactu' or 'sii'."
-            )
+            return err(f"Invalid response_type: {response_type!r}. Must be 'verifactu' or 'sii'.")
 
-        xml_bytes = xml_str.encode() if isinstance(xml_str, str) else xml_str
+        xml_bytes = xml.encode() if isinstance(xml, str) else xml
         try:
             root = safe_fromstring(xml_bytes)
         except etree.XMLSyntaxError as exc:
@@ -422,11 +366,11 @@ async def handle_es_parse_aeat_response(
             return None
 
         result: dict[str, Any] = {
-            "response_type": response_type.value,
+            "response_type": response_type_enum.value,
             "raw_root_tag": root.tag,
         }
 
-        if response_type == AEATResponseType.verifactu:
+        if response_type_enum == AEATResponseType.verifactu:
             # VERI*FACTU response fields (RespuestaRegFactuSistemaFacturacion)
             result["estado_envio"] = _text(_find(root, "EstadoEnvio"))
             result["csv"] = _text(_find(root, "CSV"))

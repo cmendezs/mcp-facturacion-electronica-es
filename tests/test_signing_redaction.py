@@ -6,7 +6,6 @@ password string into log records.
 
 from __future__ import annotations
 
-import json
 import logging
 import tempfile
 
@@ -45,19 +44,24 @@ def test_sign_facturae_xades_schema_has_no_cert_password() -> None:
     """ES-SH-6: cert_password must never be an LLM-facing tool argument.
 
     Direct-mode signing reads the password only from AEATSettings
-    (AEAT_CERTIFICATE_PASSWORD), not from MCP tool arguments.
+    (AEAT_CERTIFICATE_PASSWORD). As a typed FastMCP function, the tool's
+    JSON schema is derived from its parameter list, so cert_password simply
+    cannot appear there (and passing it raises TypeError, not "ignored").
     """
-    from mcp_facturacion_electronica_es.tools.facturae import TOOL_ES_SIGN_FACTURAE_XADES
+    import inspect
 
-    assert "cert_password" not in TOOL_ES_SIGN_FACTURAE_XADES.inputSchema["properties"]
+    from mcp_facturacion_electronica_es.tools.facturae import es__sign_facturae_xades
+
+    assert "cert_password" not in inspect.signature(es__sign_facturae_xades).parameters
 
 
 @pytest.mark.asyncio
-async def test_handle_sign_facturae_xades_ignores_cert_password_argument(
+async def test_handle_sign_facturae_xades_uses_settings_password(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Even if a caller passes cert_password, direct-mode signing must source
-    the password only from AEATSettings, never from the tool argument."""
+    """Direct-mode signing must source the password only from AEATSettings,
+    never from a tool argument — enforced structurally: es__sign_facturae_xades
+    has no cert_password parameter at all (see test above)."""
     import mcp_einvoicing_core.confirmation as confirmation_module
 
     from mcp_facturacion_electronica_es.config import aeat_settings
@@ -80,14 +84,10 @@ async def test_handle_sign_facturae_xades_ignores_cert_password_argument(
 
     monkeypatch.setattr(facturae_module, "XAdESEPESSigner", _FakeSigner)
 
-    result = await facturae_module.handle_es_sign_facturae_xades(
-        {
-            "xml": "<Facturae/>",
-            "cert_path": "/nonexistent/cert.p12",
-            "cert_password": "should-be-ignored",
-        }
+    data = await facturae_module.es__sign_facturae_xades(
+        xml="<Facturae/>",
+        cert_path="/nonexistent/cert.p12",
     )
-    data = json.loads(result[0].text)
     assert "error" not in data
     assert len(captured_configs) == 1
     assert captured_configs[0].cert_password == "from-settings-only"

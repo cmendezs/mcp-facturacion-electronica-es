@@ -76,10 +76,9 @@ def test_build_facturae_xml_is_valid_xml(minimal_invoice) -> None:
 
 @pytest.mark.asyncio
 async def test_handle_generate_facturae_xml(minimal_invoice) -> None:
-    from mcp_facturacion_electronica_es.tools.facturae import handle_es_generate_facturae_xml
+    from mcp_facturacion_electronica_es.tools.facturae import es__generate_facturae_xml
 
-    result = await handle_es_generate_facturae_xml({"invoice": minimal_invoice.model_dump()})
-    data = json.loads(result[0].text)
+    data = await es__generate_facturae_xml(invoice=minimal_invoice.model_dump())
     assert "error" not in data
     assert "xml" in data
     assert "3.2.2" in data["xml"]
@@ -89,40 +88,36 @@ async def test_handle_generate_facturae_xml(minimal_invoice) -> None:
 
 @pytest.mark.asyncio
 async def test_handle_generate_facturae_xml_missing_invoice() -> None:
-    from mcp_facturacion_electronica_es.tools.facturae import handle_es_generate_facturae_xml
+    from mcp_facturacion_electronica_es.tools.facturae import es__generate_facturae_xml
 
-    result = await handle_es_generate_facturae_xml({})
-    data = json.loads(result[0].text)
+    data = await es__generate_facturae_xml(invoice={})
     assert "error" in data
 
 
 @pytest.mark.asyncio
 async def test_handle_validate_facturae_schema_valid(minimal_facturae_xml) -> None:
-    from mcp_facturacion_electronica_es.tools.facturae import handle_es_validate_facturae_schema
+    from mcp_facturacion_electronica_es.tools.facturae import es__validate_facturae_schema
 
-    result = await handle_es_validate_facturae_schema({"xml": minimal_facturae_xml})
-    data = json.loads(result[0].text)
+    data = await es__validate_facturae_schema(xml=minimal_facturae_xml)
     assert data["valid"] is True
     assert data["errors"] == []
 
 
 @pytest.mark.asyncio
 async def test_handle_validate_facturae_schema_missing_elements() -> None:
-    from mcp_facturacion_electronica_es.tools.facturae import handle_es_validate_facturae_schema
+    from mcp_facturacion_electronica_es.tools.facturae import es__validate_facturae_schema
 
     minimal_xml = '<?xml version="1.0" encoding="UTF-8"?><Facturae xmlns="http://www.facturae.gob.es/formato/Versiones/Facturaev3_2_2.xml"><FileHeader/></Facturae>'
-    result = await handle_es_validate_facturae_schema({"xml": minimal_xml})
-    data = json.loads(result[0].text)
+    data = await es__validate_facturae_schema(xml=minimal_xml)
     # Missing required elements — must flag errors
     assert data["valid"] is False
 
 
 @pytest.mark.asyncio
 async def test_handle_validate_facturae_schema_invalid_xml() -> None:
-    from mcp_facturacion_electronica_es.tools.facturae import handle_es_validate_facturae_schema
+    from mcp_facturacion_electronica_es.tools.facturae import es__validate_facturae_schema
 
-    result = await handle_es_validate_facturae_schema({"xml": "<bad xml <<<"})
-    data = json.loads(result[0].text)
+    data = await es__validate_facturae_schema(xml="<bad xml <<<")
     assert data["valid"] is False
     assert len(data["errors"]) > 0
 
@@ -274,7 +269,7 @@ async def test_facturae_igic_recargo_irpf_xsd_valid(minimal_invoice) -> None:
     from decimal import Decimal as D
 
     from mcp_facturacion_electronica_es.tools.facturae import (
-        handle_es_validate_facturae_schema,
+        es__validate_facturae_schema,
     )
 
     xml_bytes = build_facturae_xml(
@@ -284,8 +279,7 @@ async def test_facturae_igic_recargo_irpf_xsd_valid(minimal_invoice) -> None:
         irpf_amount=D("150.00"),
         irpf_rate=D("15.00"),
     )
-    result = await handle_es_validate_facturae_schema({"xml": xml_bytes.decode("utf-8")})
-    data = json.loads(result[0].text)
+    data = await es__validate_facturae_schema(xml=xml_bytes.decode("utf-8"))
     assert data["valid"] is True, data["errors"]
 
 
@@ -397,15 +391,12 @@ async def test_handle_submit_to_face_masks_response(
 
     monkeypatch.setattr(facturae_module, "_build_face_client", lambda base_url: _FakeClient())
 
-    result = await facturae_module.handle_es_submit_to_face(
-        {
-            "xml": minimal_facturae_xml,
-            "administrative_unit": "U001",
-            "accounting_office": "O001",
-            "management_body": "G001",
-        }
+    data = await facturae_module.es__submit_to_face(
+        xml=minimal_facturae_xml,
+        administrative_unit="U001",
+        accounting_office="O001",
+        management_body="G001",
     )
-    data = json.loads(result[0].text)
     assert "error" not in data
     assert data["codigo"] == "1200"
     assert "secretToken" not in json.dumps(data)

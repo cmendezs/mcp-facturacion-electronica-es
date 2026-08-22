@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import base64
 import hashlib
-import json
 import os
 
 import pytest
@@ -85,7 +84,7 @@ async def test_face_sandbox_submit_invoice(
     from mcp_facturacion_electronica_es.config import aeat_settings
     from mcp_facturacion_electronica_es.tools.facturae import (
         build_facturae_xml,
-        handle_es_submit_to_face,
+        es__submit_to_face,
     )
 
     monkeypatch.setattr(aeat_settings, "certificate_path", os.environ["FACE_TEST_PKCS12_PATH"])
@@ -101,12 +100,10 @@ async def test_face_sandbox_submit_invoice(
         "management_body": management_body,
     }
 
-    first = await handle_es_submit_to_face(args)
-    pending = json.loads(first[0].text)
+    pending = await es__submit_to_face(**args)
     token = pending.get("token")
     assert token, f"Expected a pending-confirmation response, got: {pending}"
 
     args["confirmation_token"] = token
-    result = await handle_es_submit_to_face(args)
-    data = json.loads(result[0].text)
+    data = await es__submit_to_face(**args)
     assert "error" not in data, data

@@ -30,7 +30,6 @@ import logging
 from decimal import Decimal
 from typing import Any
 
-import mcp.types as types
 from lxml import etree
 from mcp_einvoicing_core.exceptions import EInvoicingError
 from mcp_einvoicing_core.models import InvoiceDocument
@@ -205,99 +204,48 @@ def build_ubl_invoice(invoice: InvoiceDocument) -> bytes:
 # Tool definitions
 # ---------------------------------------------------------------------------
 
-TOOL_ES_GENERATE_B2B_EINVOICE_ES = types.Tool(
-    name="es__generate_b2b_einvoice_es",
-    description=(
-        "Genera una factura B2B conforme a EN 16931 en formato UBL 2.1 o Facturae 3.2.2 "
-        "según la Ley 18/2022 'Crea y Crece'. "
-        "RD 238/2026 publicado; formatos confirmados (EN 16931: CII/UBL/EDIFACT/Facturae). "
-        "Orden Ministerial (Hacienda) pendiente para la solución pública."
-    ),
-    inputSchema={
-        "type": "object",
-        "properties": {
-            "invoice": {"type": "object", "description": "Datos de la factura."},
-            "format": {
-                "type": "string",
-                "enum": ["ubl", "facturae"],
-                "description": "Formato de salida: 'ubl' (por defecto) o 'facturae'.",
-                "default": "ubl",
-            },
-        },
-        "required": ["invoice"],
-    },
-)
-
-TOOL_ES_CHECK_B2B_MANDATE_APPLICABILITY = types.Tool(
-    name="es__check_b2b_mandate_applicability",
-    description=(
-        "Determina el régimen de facturación electrónica aplicable (VERI*FACTU, SII, TicketBAI, "
-        "NaTicket) a partir del volumen de operaciones, código de provincia y enrolamiento en SII. "
-        "Aplica la lógica de exclusión mutua del Real Decreto 254/2025."
-    ),
-    inputSchema={
-        "type": "object",
-        "properties": {
-            "annual_turnover_eur": {
-                "type": "number",
-                "description": "Volumen anual de operaciones IVA en EUR.",
-            },
-            "tax_address_province_code": {
-                "type": "string",
-                "description": "Código de provincia INE de dos dígitos.",
-            },
-            "enrolled_in_sii": {
-                "type": "boolean",
-                "description": "Inscripción en el SII (por defecto: false).",
-                "default": False,
-            },
-            "entity_type": {
-                "type": "string",
-                "enum": ["IS", "IRPF"],
-                "description": "Tipo de obligado: 'IS' (Sociedades) o 'IRPF'.",
-            },
-        },
-        "required": ["annual_turnover_eur", "tax_address_province_code"],
-    },
-)
-
-
 # ---------------------------------------------------------------------------
-# Handlers
+# Tools
 # ---------------------------------------------------------------------------
 
 
-async def handle_es_generate_b2b_einvoice_es(
-    arguments: dict[str, Any],
-) -> list[types.TextContent]:
+async def es__generate_b2b_einvoice_es(
+    invoice: dict[str, Any],
+    format: str = "ubl",  # noqa: A002
+) -> dict[str, Any]:
+    """Genera una factura B2B conforme a EN 16931 en formato UBL 2.1 o Facturae 3.2.2.
+
+    Según la Ley 18/2022 'Crea y Crece'. RD 238/2026 publicado; formatos
+    confirmados (EN 16931: CII/UBL/EDIFACT/Facturae). Orden Ministerial
+    (Hacienda) pendiente para la solución pública.
+
+    Args:
+        invoice: Datos de la factura.
+        format: Formato de salida: 'ubl' (por defecto) o 'facturae'.
+    """
     try:
-        invoice_data = arguments.get("invoice")
-        if not invoice_data:
-            return err("invoice is required", "MISSING_PARAM")
-
-        format_str = arguments.get("format", "ubl")
         try:
-            fmt = B2BFormat(format_str)
+            fmt = B2BFormat(format)
         except ValueError:
-            return err(f"Invalid format: {format_str!r}. Must be 'ubl' or 'facturae'.")
+            return err(f"Invalid format: {format!r}. Must be 'ubl' or 'facturae'.")
 
-        invoice = parse_invoice(invoice_data)
+        parsed_invoice = parse_invoice(invoice)
 
         if fmt == B2BFormat.ubl:
-            xml_bytes = build_ubl_invoice(invoice)
+            xml_bytes = build_ubl_invoice(parsed_invoice)
             schema_desc = "UBL 2.1 (EN 16931)"
         else:
-            xml_bytes = build_facturae_xml(invoice)
+            xml_bytes = build_facturae_xml(parsed_invoice)
             schema_desc = "Facturae 3.2.2 (EN 16931)"
 
-        logger.info("B2B e-invoice generated for %s (format=%s)", invoice.number, fmt.value)
+        logger.info("B2B e-invoice generated for %s (format=%s)", parsed_invoice.number, fmt.value)
 
         return ok(
             {
                 "xml": xml_bytes.decode("utf-8"),
                 "format": fmt.value,
                 "schema": schema_desc,
-                "invoice_number": invoice.number,
+                "invoice_number": parsed_invoice.number,
                 "disclaimer": (
                     "RD 238/2026 publicado; formatos confirmados (EN 16931: CII/UBL/EDIFACT/"
                     "Facturae). Orden Ministerial (Hacienda) pendiente para la solución pública "
@@ -314,14 +262,28 @@ async def handle_es_generate_b2b_einvoice_es(
         return err(str(exc))
 
 
-async def handle_es_check_b2b_mandate_applicability(
-    arguments: dict[str, Any],
-) -> list[types.TextContent]:
+async def es__check_b2b_mandate_applicability(
+    annual_turnover_eur: float,
+    tax_address_province_code: str,
+    enrolled_in_sii: bool = False,
+    entity_type: str = "IS",
+) -> dict[str, Any]:
+    """Determina el régimen de facturación electrónica aplicable.
+
+    VERI*FACTU, SII, TicketBAI, NaTicket, a partir del volumen de operaciones,
+    código de provincia y enrolamiento en SII. Aplica la lógica de exclusión
+    mutua del Real Decreto 254/2025.
+
+    Args:
+        annual_turnover_eur: Volumen anual de operaciones IVA en EUR.
+        tax_address_province_code: Código de provincia INE de dos dígitos.
+        enrolled_in_sii: Inscripción en el SII (por defecto: false).
+        entity_type: Tipo de obligado: 'IS' (Sociedades) o 'IRPF'.
+    """
     try:
-        turnover = arguments.get("annual_turnover_eur")
-        province_code = str(arguments.get("tax_address_province_code", "")).strip()
-        enrolled = bool(arguments.get("enrolled_in_sii", False))
-        entity_type_str = arguments.get("entity_type", "IS")
+        turnover = annual_turnover_eur
+        province_code = str(tax_address_province_code).strip()
+        enrolled = bool(enrolled_in_sii)
 
         if turnover is None:
             return err("annual_turnover_eur is required", "MISSING_PARAM")
@@ -329,9 +291,9 @@ async def handle_es_check_b2b_mandate_applicability(
             return err("tax_address_province_code is required", "MISSING_PARAM")
 
         try:
-            entity_type = EntityType(entity_type_str)
+            entity_type_enum = EntityType(entity_type)
         except ValueError:
-            return err(f"Invalid entity_type: {entity_type_str!r}. Must be 'IS' or 'IRPF'.")
+            return err(f"Invalid entity_type: {entity_type!r}. Must be 'IS' or 'IRPF'.")
 
         regime = _detect_regime(province_code, enrolled, annual_turnover_eur=float(turnover))
 
@@ -361,7 +323,7 @@ async def handle_es_check_b2b_mandate_applicability(
         else:
             # VERIFACTU
             applicable_systems = ["VERI*FACTU"]
-            deadline = "enero 2027" if entity_type == EntityType.IS else "julio 2027"
+            deadline = "enero 2027" if entity_type_enum == EntityType.IS else "julio 2027"
             notes.append(
                 f"VERI*FACTU obligatorio desde {deadline} (RD-ley 15/2025). "
                 "Obligatorio también Facturae/FACe para facturas B2G."
@@ -390,7 +352,7 @@ async def handle_es_check_b2b_mandate_applicability(
             {
                 "annual_turnover_eur": float(turnover),
                 "province_code": province_code,
-                "entity_type": entity_type.value,
+                "entity_type": entity_type_enum.value,
                 "enrolled_in_sii": enrolled,
                 "primary_regime": regime.value,
                 "applicable_systems": applicable_systems,

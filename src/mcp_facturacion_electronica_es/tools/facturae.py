@@ -31,7 +31,6 @@ import logging
 from decimal import Decimal
 from typing import Any
 
-import mcp.types as types
 from lxml import etree
 from mcp_einvoicing_core.base_server import assert_not_read_only
 from mcp_einvoicing_core.confirmation import ConfirmationGate
@@ -322,174 +321,6 @@ def build_facturae_xml(
 # Tool definitions
 # ---------------------------------------------------------------------------
 
-TOOL_ES_GENERATE_FACTURAE_XML = types.Tool(
-    name="es__generate_facturae_xml",
-    description=(
-        "Genera una factura XML conforme a Facturae 3.2.2 para envío B2G al portal FACe. "
-        "El documento generado está sin firmar; use es__sign_facturae_xades para firmarlo."
-    ),
-    inputSchema={
-        "type": "object",
-        "properties": {
-            "invoice": {
-                "type": "object",
-                "description": "InvoiceDocument con seller, buyer, vat_summary y lines.",
-            },
-            "schema_version": {
-                "type": "string",
-                "description": "Versión del esquema Facturae (por defecto: '3.2.2').",
-                "default": "3.2.2",
-            },
-            "invoice_issuer_type": {
-                "type": "string",
-                "enum": ["EU", "EM", "TE"],
-                "description": (
-                    "EU (emisor=vendedor), EM (emisor=comprador), TE (tercero). "
-                    "Por defecto: 'EU'."
-                ),
-                "default": "EU",
-            },
-            "tax_type": {
-                "type": "string",
-                "enum": ["IVA", "IPSI", "IGIC"],
-                "description": (
-                    "Impuesto indirecto aplicable a todas las líneas de la factura "
-                    "(IVA: península/Baleares; IPSI: Ceuta/Melilla; IGIC: Canarias). "
-                    "No se admite mezclar impuestos en una misma factura. Por defecto: 'IVA'."
-                ),
-                "default": "IVA",
-            },
-            "recargo_equivalencia_rate": {
-                "type": "number",
-                "description": "Tipo de Recargo de Equivalencia (%), si aplica.",
-            },
-            "recargo_equivalencia_amount": {
-                "type": "number",
-                "description": (
-                    "Importe explícito del Recargo de Equivalencia. Si se omite, se "
-                    "calcula como base_imponible * recargo_equivalencia_rate / 100."
-                ),
-            },
-            "irpf_amount": {
-                "type": "number",
-                "description": "Importe de retención IRPF a deducir del total de la factura.",
-            },
-            "irpf_rate": {
-                "type": "number",
-                "description": "Tipo de retención IRPF (%), emitido en TaxesWithheld.",
-            },
-            "resolution_reference": {
-                "type": "string",
-                "description": "ResolutionReference para facturas B2G a Administraciones Públicas.",
-            },
-            "receiver_transaction_reference": {
-                "type": "string",
-                "description": "ReceiverTransactionReference para facturas B2G.",
-            },
-        },
-        "required": ["invoice"],
-    },
-)
-
-TOOL_ES_SIGN_FACTURAE_XADES = types.Tool(
-    name="es__sign_facturae_xades",
-    description=(
-        "Aplica una firma digital XAdES-EPES (ETSI EN 319 132-1) a un documento Facturae XML. "
-        "Usa el certificado PKCS#12 indicado para firmar con SHA-256 + RSA. "
-        "La política de firma por defecto es la de Facturae (Orden EHA/962/2007)."
-    ),
-    inputSchema={
-        "type": "object",
-        "properties": {
-            "xml": {"type": "string", "description": "XML Facturae sin firmar."},
-            "cert_path": {
-                "type": "string",
-                "description": (
-                    "Ruta al certificado PKCS#12 (.p12 / .pfx). La contraseña se lee "
-                    "de AEAT_CERTIFICATE_PASSWORD (nunca como argumento de la tool)."
-                ),
-            },
-            "signature_policy_id": {
-                "type": "string",
-                "description": (
-                    "OID/URI de la política de firma. "
-                    "Por defecto: política Facturae (Orden EHA/962/2007)."
-                ),
-            },
-            "signature_policy_hash": {
-                "type": "string",
-                "description": "SHA-256 base64 del documento de política de firma.",
-            },
-        },
-        "required": ["xml", "cert_path"],
-    },
-)
-
-TOOL_ES_SUBMIT_TO_FACE = types.Tool(
-    name="es__submit_to_face",
-    description=(
-        "Envía un XML Facturae firmado con XAdES a FACe (Punto General de Entrada de Facturas "
-        "Electrónicas) a través de la API REST B2B de FACe v2. "
-        "Autenticación JWS (RS256 + x5c) per FACe-manual-api-integradores.pdf s2.3: "
-        "requiere FACE_ENV y AEAT_CERTIFICATE_PATH (+ AEAT_CERTIFICATE_PASSWORD)."
-    ),
-    inputSchema={
-        "type": "object",
-        "properties": {
-            "xml": {"type": "string", "description": "XML Facturae con firma XAdES."},
-            "administrative_unit": {
-                "type": "string",
-                "description": "Código UnidadTramitadora de FACe.",
-            },
-            "accounting_office": {
-                "type": "string",
-                "description": "Código OficinasContables de FACe.",
-            },
-            "management_body": {
-                "type": "string",
-                "description": "Código OrganoGestor de FACe.",
-            },
-        },
-        "required": ["xml", "administrative_unit", "accounting_office", "management_body"],
-    },
-)
-
-TOOL_ES_GET_FACE_INVOICE_STATUS = types.Tool(
-    name="es__get_face_invoice_status",
-    description=(
-        "Consulta el estado de tramitación de una factura en FACe. "
-        "Códigos: 1200 Registrada, 2400 Reconocida, 3100 Rechazada, 4100 Pagada."
-    ),
-    inputSchema={
-        "type": "object",
-        "properties": {
-            "invoice_id": {"type": "string", "description": "Número de registro FACe."},
-        },
-        "required": ["invoice_id"],
-    },
-)
-
-TOOL_ES_VALIDATE_FACTURAE_SCHEMA = types.Tool(
-    name="es__validate_facturae_schema",
-    description=(
-        "Valida un XML Facturae contra el XSD oficial 3.2.2. Realiza validación estructural "
-        "y, si el XSD está disponible en specs/facturae/, también validación de esquema completa."
-    ),
-    inputSchema={
-        "type": "object",
-        "properties": {
-            "xml": {"type": "string", "description": "XML Facturae a validar."},
-            "schema_version": {
-                "type": "string",
-                "description": "Versión del esquema (por defecto: '3.2.2').",
-                "default": "3.2.2",
-            },
-        },
-        "required": ["xml"],
-    },
-)
-
-
 # ---------------------------------------------------------------------------
 # FACe JWS authentication (ES-LC-14) and response masking (ES-SH-7)
 # ---------------------------------------------------------------------------
@@ -544,43 +375,69 @@ def _parse_face_response(response: Any) -> dict[str, Any]:
 
 
 # ---------------------------------------------------------------------------
-# Handlers
+# Tools
 # ---------------------------------------------------------------------------
 
 
-async def handle_es_generate_facturae_xml(
-    arguments: dict[str, Any],
-) -> list[types.TextContent]:
+async def es__generate_facturae_xml(
+    invoice: dict[str, Any],
+    schema_version: str = "3.2.2",
+    invoice_issuer_type: str = "EU",
+    tax_type: str = "IVA",
+    recargo_equivalencia_rate: float | None = None,
+    recargo_equivalencia_amount: float | None = None,
+    irpf_amount: float | None = None,
+    irpf_rate: float | None = None,
+    resolution_reference: str | None = None,
+    receiver_transaction_reference: str | None = None,
+) -> dict[str, Any]:
+    """Genera una factura XML conforme a Facturae 3.2.2 para envío B2G al portal FACe.
+
+    El documento generado está sin firmar; use es__sign_facturae_xades para firmarlo.
+
+    Args:
+        invoice: InvoiceDocument con seller, buyer, vat_summary y lines.
+        schema_version: Versión del esquema Facturae (por defecto: '3.2.2').
+        invoice_issuer_type: EU (emisor=vendedor), EM (emisor=comprador),
+            TE (tercero). Por defecto: 'EU'.
+        tax_type: Impuesto indirecto aplicable a todas las líneas de la factura
+            (IVA: península/Baleares; IPSI: Ceuta/Melilla; IGIC: Canarias).
+            No se admite mezclar impuestos en una misma factura. Por defecto: 'IVA'.
+        recargo_equivalencia_rate: Tipo de Recargo de Equivalencia (%), si aplica.
+        recargo_equivalencia_amount: Importe explícito del Recargo de Equivalencia.
+            Si se omite, se calcula como base_imponible * recargo_equivalencia_rate / 100.
+        irpf_amount: Importe de retención IRPF a deducir del total de la factura.
+        irpf_rate: Tipo de retención IRPF (%), emitido en TaxesWithheld.
+        resolution_reference: ResolutionReference para facturas B2G a
+            Administraciones Públicas.
+        receiver_transaction_reference: ReceiverTransactionReference para
+            facturas B2G.
+    """
+    del schema_version  # reserved for future multi-version XSD selection
     try:
-        invoice_data = arguments.get("invoice")
-        if not invoice_data:
-            return err("invoice is required", "MISSING_PARAM")
+        parsed_invoice = parse_invoice(invoice)
 
-        invoice = parse_invoice(invoice_data)
-        invoice_issuer_type: str = arguments.get("invoice_issuer_type", "EU")
-
-        def _opt_decimal(key: str) -> Decimal | None:
-            raw = arguments.get(key)
+        def _opt_decimal(raw: float | None) -> Decimal | None:
             return Decimal(str(raw)) if raw is not None else None
 
         xml_bytes = build_facturae_xml(
-            invoice,
+            parsed_invoice,
             invoice_issuer_type=invoice_issuer_type,
-            irpf_amount=_opt_decimal("irpf_amount"),
-            irpf_rate=_opt_decimal("irpf_rate"),
-            resolution_reference=arguments.get("resolution_reference"),
-            receiver_transaction_reference=arguments.get("receiver_transaction_reference"),
-            tax_type=arguments.get("tax_type", "IVA"),
-            recargo_equivalencia_rate=_opt_decimal("recargo_equivalencia_rate"),
-            recargo_equivalencia_amount=_opt_decimal("recargo_equivalencia_amount"),
+            irpf_amount=_opt_decimal(irpf_amount),
+            irpf_rate=_opt_decimal(irpf_rate),
+            resolution_reference=resolution_reference,
+            receiver_transaction_reference=receiver_transaction_reference,
+            tax_type=tax_type,
+            recargo_equivalencia_rate=_opt_decimal(recargo_equivalencia_rate),
+            recargo_equivalencia_amount=_opt_decimal(recargo_equivalencia_amount),
         )
 
-        logger.info("Facturae 3.2.2 XML generated for invoice %s", invoice.number)
+        logger.info("Facturae 3.2.2 XML generated for invoice %s", parsed_invoice.number)
         return ok(
             {
                 "xml": xml_bytes.decode("utf-8"),
                 "schema_version": "3.2.2",
-                "invoice_number": invoice.number,
+                "invoice_number": parsed_invoice.number,
                 "next_step": "Use es__sign_facturae_xades to apply XAdES-EPES signature before submitting to FACe.",
             }
         )
@@ -592,15 +449,35 @@ async def handle_es_generate_facturae_xml(
         return err(str(exc))
 
 
-async def handle_es_sign_facturae_xades(
-    arguments: dict[str, Any],
-) -> list[types.TextContent]:
+async def es__sign_facturae_xades(
+    xml: str,
+    cert_path: str | None = None,
+    signature_policy_id: str | None = None,
+    signature_policy_hash: str | None = None,
+    confirmation_token: str | None = None,
+) -> dict[str, Any]:
+    """Aplica una firma digital XAdES-EPES (ETSI EN 319 132-1) a un documento Facturae XML.
+
+    Usa el certificado PKCS#12 indicado para firmar con SHA-256 + RSA. La
+    política de firma por defecto es la de Facturae (Orden EHA/962/2007).
+
+    HUMAN-IN-THE-LOOP: llame sin confirmation_token para recibir un resumen de
+    confirmación y un token; muéstrelo al usuario y vuelva a llamar con
+    confirmation_token para aplicar la firma real.
+
+    Args:
+        xml: XML Facturae sin firmar.
+        cert_path: Ruta al certificado PKCS#12 (.p12 / .pfx). La contraseña se
+            lee de AEAT_CERTIFICATE_PASSWORD (nunca como argumento de la tool).
+        signature_policy_id: OID/URI de la política de firma. Por defecto:
+            política Facturae (Orden EHA/962/2007).
+        signature_policy_hash: SHA-256 base64 del documento de política de firma.
+        confirmation_token: Token de la respuesta awaiting_confirmation previa.
+    """
     try:
-        xml_str = arguments.get("xml", "")
-        if not xml_str:
+        if not xml:
             return err("xml is required", "MISSING_PARAM")
 
-        confirmation_token: str | None = arguments.get("confirmation_token") or None
         assert_not_read_only("AEAT_READ_ONLY")
         gate = ConfirmationGate.get_default()
         if not gate.is_confirmed(confirmation_token):
@@ -616,10 +493,10 @@ async def handle_es_sign_facturae_xades(
                 )
             )
 
-        policy_id: str = arguments.get("signature_policy_id") or FACTURAE_POLICY_ID
-        policy_hash: str | None = arguments.get("signature_policy_hash") or FACTURAE_POLICY_HASH
+        policy_id: str = signature_policy_id or FACTURAE_POLICY_ID
+        policy_hash: str | None = signature_policy_hash or FACTURAE_POLICY_HASH
 
-        xml_bytes = xml_str.encode() if isinstance(xml_str, str) else xml_str
+        xml_bytes = xml.encode() if isinstance(xml, str) else xml
 
         if SignerClient.is_configured():
             signer_client = SignerClient.from_env()
@@ -630,7 +507,6 @@ async def handle_es_sign_facturae_xades(
             )
             logger.info("Facturae XAdES-EPES signature applied via signer microservice")
         else:
-            cert_path = arguments.get("cert_path", "")
             if not cert_path:
                 return err(
                     "cert_path is required when signer microservice is not configured "
@@ -673,19 +549,34 @@ async def handle_es_sign_facturae_xades(
         return err(str(exc))
 
 
-async def handle_es_submit_to_face(
-    arguments: dict[str, Any],
-) -> list[types.TextContent]:
-    try:
-        xml_str = arguments.get("xml", "")
-        admin_unit = arguments.get("administrative_unit", "")
-        accounting_office = arguments.get("accounting_office", "")
-        management_body = arguments.get("management_body", "")
-        confirmation_token: str | None = arguments.get("confirmation_token") or None
+async def es__submit_to_face(
+    xml: str,
+    administrative_unit: str,
+    accounting_office: str,
+    management_body: str,
+    confirmation_token: str | None = None,
+) -> dict[str, Any]:
+    """Envía un XML Facturae firmado con XAdES a FACe a través de la API REST B2B de FACe v2.
 
+    FACe = Punto General de Entrada de Facturas Electrónicas. Autenticación JWS
+    (RS256 + x5c) per FACe-manual-api-integradores.pdf s2.3: requiere FACE_ENV
+    y AEAT_CERTIFICATE_PATH (+ AEAT_CERTIFICATE_PASSWORD).
+
+    HUMAN-IN-THE-LOOP: llame sin confirmation_token para recibir un resumen de
+    confirmación y un token; muéstrelo al usuario y vuelva a llamar con
+    confirmation_token para ejecutar el envío real.
+
+    Args:
+        xml: XML Facturae con firma XAdES.
+        administrative_unit: Código UnidadTramitadora de FACe.
+        accounting_office: Código OficinasContables de FACe.
+        management_body: Código OrganoGestor de FACe.
+        confirmation_token: Token de la respuesta awaiting_confirmation previa.
+    """
+    try:
         for name, val in [
-            ("xml", xml_str),
-            ("administrative_unit", admin_unit),
+            ("xml", xml),
+            ("administrative_unit", administrative_unit),
             ("accounting_office", accounting_office),
             ("management_body", management_body),
         ]:
@@ -701,7 +592,7 @@ async def handle_es_submit_to_face(
                     action="es__submit_to_face",
                     summary=(
                         f"Submit Facturae XML to FACe ({env_label}) for unit "
-                        f"{admin_unit!r} / office {accounting_office!r}. "
+                        f"{administrative_unit!r} / office {accounting_office!r}. "
                         "This registers the invoice with the government B2B platform."
                     ),
                     token=confirmation_token,
@@ -712,9 +603,9 @@ async def handle_es_submit_to_face(
         base_url = FACE_BASE_URLS[env]
         client = _build_face_client(base_url)
 
-        xml_bytes = xml_str.encode() if isinstance(xml_str, str) else xml_str
+        xml_bytes = xml.encode() if isinstance(xml, str) else xml
         payload = {
-            "unidadTramitadora": admin_unit,
+            "unidadTramitadora": administrative_unit,
             "oficinasContables": accounting_office,
             "organoGestor": management_body,
         }
@@ -735,11 +626,15 @@ async def handle_es_submit_to_face(
         return err(str(exc))
 
 
-async def handle_es_get_face_invoice_status(
-    arguments: dict[str, Any],
-) -> list[types.TextContent]:
+async def es__get_face_invoice_status(invoice_id: str) -> dict[str, Any]:
+    """Consulta el estado de tramitación de una factura en FACe.
+
+    Códigos: 1200 Registrada, 2400 Reconocida, 3100 Rechazada, 4100 Pagada.
+
+    Args:
+        invoice_id: Número de registro FACe.
+    """
     try:
-        invoice_id = arguments.get("invoice_id", "")
         if not invoice_id:
             return err("invoice_id is required", "MISSING_PARAM")
 
@@ -774,15 +669,25 @@ async def handle_es_get_face_invoice_status(
         return err(str(exc))
 
 
-async def handle_es_validate_facturae_schema(
-    arguments: dict[str, Any],
-) -> list[types.TextContent]:
+async def es__validate_facturae_schema(
+    xml: str,
+    schema_version: str = "3.2.2",
+) -> dict[str, Any]:
+    """Valida un XML Facturae contra el XSD oficial 3.2.2.
+
+    Realiza validación estructural y, si el XSD está disponible en
+    specs/facturae/, también validación de esquema completa.
+
+    Args:
+        xml: XML Facturae a validar.
+        schema_version: Versión del esquema (por defecto: '3.2.2').
+    """
+    del schema_version  # reserved for future multi-version XSD selection
     try:
-        xml_str = arguments.get("xml", "")
-        if not xml_str:
+        if not xml:
             return err("xml is required", "MISSING_PARAM")
 
-        xml_bytes = xml_str.encode() if isinstance(xml_str, str) else xml_str
+        xml_bytes = xml.encode() if isinstance(xml, str) else xml
         try:
             root = safe_fromstring(xml_bytes)
         except etree.XMLSyntaxError as exc:

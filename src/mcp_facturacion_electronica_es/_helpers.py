@@ -5,14 +5,12 @@ All tool handlers import from here. Nothing in this module imports from tool mod
 
 from __future__ import annotations
 
-import json
 import logging
 import os
 from decimal import ROUND_HALF_UP, Decimal
 from types import MappingProxyType
 from typing import Any
 
-import mcp.types as types
 from mcp_einvoicing_core.exceptions import EInvoicingError
 from mcp_einvoicing_core.models import InvoiceDocument, TaxIdentifier
 
@@ -49,17 +47,17 @@ def parse_invoice(data: Any) -> InvoiceDocument:
 # ---------------------------------------------------------------------------
 
 
-def ok(data: dict[str, Any]) -> list[types.TextContent]:
-    """Wrap a result dict as a successful MCP TextContent response."""
-    return [types.TextContent(type="text", text=json.dumps(data, ensure_ascii=False, default=str))]
+def ok(data: dict[str, Any]) -> dict[str, Any]:
+    """Return a result dict as a successful FastMCP tool response."""
+    return data
 
 
-def err(message: str, code: str | None = None) -> list[types.TextContent]:
-    """Wrap an error message as an MCP TextContent response."""
+def err(message: str, code: str | None = None) -> dict[str, Any]:
+    """Return an error dict as a FastMCP tool response."""
     payload: dict[str, Any] = {"error": message}
     if code:
         payload["error_code"] = code
-    return [types.TextContent(type="text", text=json.dumps(payload, ensure_ascii=False))]
+    return payload
 
 
 # ---------------------------------------------------------------------------

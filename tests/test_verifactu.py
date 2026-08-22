@@ -234,17 +234,14 @@ def test_compute_huella_anulacion_differs_from_alta() -> None:
 
 @pytest.mark.asyncio
 async def test_handle_generate_verifactu_record(minimal_invoice) -> None:
-    from mcp_facturacion_electronica_es.tools.verifactu import handle_es_generate_verifactu_record
+    from mcp_facturacion_electronica_es.tools.verifactu import es__generate_verifactu_record
 
-    result = await handle_es_generate_verifactu_record(
-        {
-            "invoice": minimal_invoice.model_dump(),
-            "invoice_type": "F1",
-            "software_id": "SW-001",
-            "software_nif": "B87654321",
-        }
+    data = await es__generate_verifactu_record(
+        invoice=minimal_invoice.model_dump(),
+        invoice_type="F1",
+        software_id="SW-001",
+        software_nif="B87654321",
     )
-    data = json.loads(result[0].text)
     assert "error" not in data
     assert "xml" in data
     assert "huella" in data
@@ -258,19 +255,16 @@ async def test_handle_generate_verifactu_record(minimal_invoice) -> None:
 
 @pytest.mark.asyncio
 async def test_handle_generate_verifactu_record_chained(minimal_invoice) -> None:
-    from mcp_facturacion_electronica_es.tools.verifactu import handle_es_generate_verifactu_record
+    from mcp_facturacion_electronica_es.tools.verifactu import es__generate_verifactu_record
 
     prev_hash = "A" * 64
-    result = await handle_es_generate_verifactu_record(
-        {
-            "invoice": minimal_invoice.model_dump(),
-            "invoice_type": "F1",
-            "software_id": "SW-001",
-            "software_nif": "B87654321",
-            "previous_hash": prev_hash,
-        }
+    data = await es__generate_verifactu_record(
+        invoice=minimal_invoice.model_dump(),
+        invoice_type="F1",
+        software_id="SW-001",
+        software_nif="B87654321",
+        previous_hash=prev_hash,
     )
-    data = json.loads(result[0].text)
     assert "error" not in data
     assert len(data["huella"]) == 64
     # RegistroAnterior must reference the previous hash
@@ -279,33 +273,28 @@ async def test_handle_generate_verifactu_record_chained(minimal_invoice) -> None
 
 @pytest.mark.asyncio
 async def test_handle_generate_verifactu_record_missing_invoice() -> None:
-    from mcp_facturacion_electronica_es.tools.verifactu import handle_es_generate_verifactu_record
+    from mcp_facturacion_electronica_es.tools.verifactu import es__generate_verifactu_record
 
-    result = await handle_es_generate_verifactu_record(
-        {
-            "invoice_type": "F1",
-            "software_id": "SW-001",
-            "software_nif": "B87654321",
-        }
+    data = await es__generate_verifactu_record(
+        invoice={},
+        invoice_type="F1",
+        software_id="SW-001",
+        software_nif="B87654321",
     )
-    data = json.loads(result[0].text)
     assert "error" in data
 
 
 @pytest.mark.asyncio
 async def test_handle_generate_qr_verifactu() -> None:
-    from mcp_facturacion_electronica_es.tools.verifactu import handle_es_generate_qr_verifactu
+    from mcp_facturacion_electronica_es.tools.verifactu import es__generate_qr_verifactu
 
-    result = await handle_es_generate_qr_verifactu(
-        {
-            "nif": "B12345678",
-            "invoice_number": "2025-0001",
-            "invoice_date": "2025-03-15",
-            "total_amount": 1210.00,
-            "size_px": 150,
-        }
+    data = await es__generate_qr_verifactu(
+        nif="B12345678",
+        invoice_number="2025-0001",
+        invoice_date="2025-03-15",
+        total_amount=1210.00,
+        size_px=150,
     )
-    data = json.loads(result[0].text)
     assert "error" not in data
     assert "qr_png_base64" in data
     assert len(data["qr_png_base64"]) > 100  # non-empty base64
@@ -318,18 +307,15 @@ async def test_handle_generate_qr_verifactu() -> None:
 
 @pytest.mark.asyncio
 async def test_handle_cancel_verifactu_record() -> None:
-    from mcp_facturacion_electronica_es.tools.verifactu import handle_es_cancel_verifactu_record
+    from mcp_facturacion_electronica_es.tools.verifactu import es__cancel_verifactu_record
 
-    result = await handle_es_cancel_verifactu_record(
-        {
-            "original_invoice_number": "2025-0001",
-            "original_invoice_date": "2025-03-15",
-            "issuer_nif": "B12345678",
-            "issuer_name": "Empresa de Prueba SL",
-            "previous_hash": "A" * 64,
-        }
+    data = await es__cancel_verifactu_record(
+        original_invoice_number="2025-0001",
+        original_invoice_date="2025-03-15",
+        issuer_nif="B12345678",
+        issuer_name="Empresa de Prueba SL",
+        previous_hash="A" * 64,
     )
-    data = json.loads(result[0].text)
     assert "error" not in data
     assert "xml" in data
     assert "RegistroAnulacion" in data["xml"]
@@ -343,18 +329,15 @@ async def test_handle_cancel_verifactu_record_uses_anulada_id_factura_names() ->
     SuministroInformacion.xsd), not the RegistroAlta names — a prior
     implementation reused _build_id_factura (the alta builder) here, which is
     structurally invalid against the XSD."""
-    from mcp_facturacion_electronica_es.tools.verifactu import handle_es_cancel_verifactu_record
+    from mcp_facturacion_electronica_es.tools.verifactu import es__cancel_verifactu_record
 
-    result = await handle_es_cancel_verifactu_record(
-        {
-            "original_invoice_number": "2025-0001",
-            "original_invoice_date": "2025-03-15",
-            "issuer_nif": "B12345678",
-            "issuer_name": "Empresa de Prueba SL",
-            "previous_hash": "A" * 64,
-        }
+    data = await es__cancel_verifactu_record(
+        original_invoice_number="2025-0001",
+        original_invoice_date="2025-03-15",
+        issuer_nif="B12345678",
+        issuer_name="Empresa de Prueba SL",
+        previous_hash="A" * 64,
     )
-    data = json.loads(result[0].text)
     xml = data["xml"]
 
     idf_start = xml.index("<sf:IDFactura>")
@@ -378,29 +361,26 @@ async def test_handle_validate_verifactu_record_anulacion_no_false_positives() -
     require them for an anulación document (regression: it previously
     reported all three as "missing" on every valid anulación)."""
     from mcp_facturacion_electronica_es.tools.verifactu import (
-        handle_es_cancel_verifactu_record,
-        handle_es_validate_verifactu_record,
+        es__cancel_verifactu_record,
+        es__validate_verifactu_record,
     )
 
-    gen_result = await handle_es_cancel_verifactu_record(
-        {
-            "original_invoice_number": "2025-0001",
-            "original_invoice_date": "2025-03-15",
-            "issuer_nif": "B12345678",
-            "issuer_name": "Empresa de Prueba SL",
-            "previous_hash": "A" * 64,
-        }
+    gen_data = await es__cancel_verifactu_record(
+        original_invoice_number="2025-0001",
+        original_invoice_date="2025-03-15",
+        issuer_nif="B12345678",
+        issuer_name="Empresa de Prueba SL",
+        previous_hash="A" * 64,
     )
-    xml = json.loads(gen_result[0].text)["xml"]
+    xml = gen_data["xml"]
 
-    val_result = await handle_es_validate_verifactu_record({"xml": xml})
-    val_data = json.loads(val_result[0].text)
+    val_data = await es__validate_verifactu_record(xml=xml)
     assert val_data["errors"] == []
     assert val_data["valid"] is True
 
 
 def test_validate_verifactu_xsd_path_resolves_to_bundled_schema() -> None:
-    """Regression: the XSD path in handle_es_validate_verifactu_record used
+    """Regression: the XSD path in es__validate_verifactu_record used
     three .parent hops (landing on src/, one level short of the package
     root), silently degrading every call to structural-only validation
     forever. Four hops are required to reach specs/."""
@@ -427,17 +407,14 @@ def test_validate_verifactu_xsd_path_resolves_to_bundled_schema() -> None:
 async def test_extract_chain_identity_from_registro_alta(minimal_invoice) -> None:
     from mcp_facturacion_electronica_es.tools.verifactu import (
         _extract_chain_identity,
-        handle_es_generate_verifactu_record,
+        es__generate_verifactu_record,
     )
 
-    result = await handle_es_generate_verifactu_record(
-        {
-            "invoice": minimal_invoice.model_dump(),
-            "software_id": "SW-001",
-            "software_nif": "B87654321",
-        }
+    data = await es__generate_verifactu_record(
+        invoice=minimal_invoice.model_dump(),
+        software_id="SW-001",
+        software_nif="B87654321",
     )
-    data = json.loads(result[0].text)
     identity = _extract_chain_identity(data["xml"].encode())
 
     assert identity is not None
@@ -450,19 +427,16 @@ async def test_extract_chain_identity_from_registro_alta(minimal_invoice) -> Non
 async def test_extract_chain_identity_from_registro_anulacion() -> None:
     from mcp_facturacion_electronica_es.tools.verifactu import (
         _extract_chain_identity,
-        handle_es_cancel_verifactu_record,
+        es__cancel_verifactu_record,
     )
 
-    result = await handle_es_cancel_verifactu_record(
-        {
-            "original_invoice_number": "2025-0001",
-            "original_invoice_date": "2025-03-15",
-            "issuer_nif": "B12345678",
-            "issuer_name": "Empresa de Prueba SL",
-            "previous_hash": "A" * 64,
-        }
+    data = await es__cancel_verifactu_record(
+        original_invoice_number="2025-0001",
+        original_invoice_date="2025-03-15",
+        issuer_nif="B12345678",
+        issuer_name="Empresa de Prueba SL",
+        previous_hash="A" * 64,
     )
-    data = json.loads(result[0].text)
     identity = _extract_chain_identity(data["xml"].encode())
 
     assert identity is not None
@@ -575,10 +549,9 @@ def test_build_chain_result_no_estado_blocks_chaining() -> None:
 
 @pytest.mark.asyncio
 async def test_handle_validate_verifactu_record_valid(minimal_verifactu_xml) -> None:
-    from mcp_facturacion_electronica_es.tools.verifactu import handle_es_validate_verifactu_record
+    from mcp_facturacion_electronica_es.tools.verifactu import es__validate_verifactu_record
 
-    result = await handle_es_validate_verifactu_record({"xml": minimal_verifactu_xml})
-    data = json.loads(result[0].text)
+    data = await es__validate_verifactu_record(xml=minimal_verifactu_xml)
     assert "error" not in data
     assert data["valid"] is True
     assert data["errors"] == []
@@ -586,10 +559,9 @@ async def test_handle_validate_verifactu_record_valid(minimal_verifactu_xml) -> 
 
 @pytest.mark.asyncio
 async def test_handle_validate_verifactu_record_invalid_xml() -> None:
-    from mcp_facturacion_electronica_es.tools.verifactu import handle_es_validate_verifactu_record
+    from mcp_facturacion_electronica_es.tools.verifactu import es__validate_verifactu_record
 
-    result = await handle_es_validate_verifactu_record({"xml": "<broken xml <<<"})
-    data = json.loads(result[0].text)
+    data = await es__validate_verifactu_record(xml="<broken xml <<<")
     assert data["valid"] is False
     assert len(data["errors"]) > 0
 
@@ -601,20 +573,17 @@ async def test_handle_validate_verifactu_record_invalid_xml() -> None:
 
 @pytest.mark.asyncio
 async def test_verifactu_non_default_clave_regimen_impuesto(minimal_invoice) -> None:
-    from mcp_facturacion_electronica_es.tools.verifactu import handle_es_generate_verifactu_record
+    from mcp_facturacion_electronica_es.tools.verifactu import es__generate_verifactu_record
 
-    result = await handle_es_generate_verifactu_record(
-        {
-            "invoice": minimal_invoice.model_dump(),
-            "invoice_type": "F1",
-            "software_id": "SW-001",
-            "software_nif": "B87654321",
-            "clave_regimen": "02",
-            "impuesto": "02",
-            "calificacion_operacion": "N1",
-        }
+    data = await es__generate_verifactu_record(
+        invoice=minimal_invoice.model_dump(),
+        invoice_type="F1",
+        software_id="SW-001",
+        software_nif="B87654321",
+        clave_regimen="02",
+        impuesto="02",
+        calificacion_operacion="N1",
     )
-    data = json.loads(result[0].text)
     assert "error" not in data
     xml = data["xml"]
     assert "ClaveRegimen>02</" in xml
@@ -660,17 +629,14 @@ def test_verifactu_response_no_espera() -> None:
 
 @pytest.mark.asyncio
 async def test_qr_url_uses_sandbox_base_by_default() -> None:
-    from mcp_facturacion_electronica_es.tools.verifactu import handle_es_generate_qr_verifactu
+    from mcp_facturacion_electronica_es.tools.verifactu import es__generate_qr_verifactu
 
-    result = await handle_es_generate_qr_verifactu(
-        {
-            "nif": "B12345678",
-            "invoice_number": "2025-0001",
-            "invoice_date": "2025-03-15",
-            "total_amount": 1210.00,
-        }
+    data = await es__generate_qr_verifactu(
+        nif="B12345678",
+        invoice_number="2025-0001",
+        invoice_date="2025-03-15",
+        total_amount=1210.00,
     )
-    data = json.loads(result[0].text)
     assert data["verification_url"].startswith(
         "https://prewww2.aeat.es/wlpl/TIKE-CONT/ValidarQR?"
     )
@@ -682,18 +648,15 @@ async def test_qr_url_uses_sandbox_base_by_default() -> None:
 
 @pytest.mark.asyncio
 async def test_qr_url_switches_to_production(monkeypatch: pytest.MonkeyPatch) -> None:
-    from mcp_facturacion_electronica_es.tools.verifactu import handle_es_generate_qr_verifactu
+    from mcp_facturacion_electronica_es.tools.verifactu import es__generate_qr_verifactu
 
     monkeypatch.setenv("AEAT_ENV", "production")
-    result = await handle_es_generate_qr_verifactu(
-        {
-            "nif": "B12345678",
-            "invoice_number": "2025-0001",
-            "invoice_date": "2025-03-15",
-            "total_amount": 1210.00,
-        }
+    data = await es__generate_qr_verifactu(
+        nif="B12345678",
+        invoice_number="2025-0001",
+        invoice_date="2025-03-15",
+        total_amount=1210.00,
     )
-    data = json.loads(result[0].text)
     assert data["verification_url"].startswith(
         "https://www2.agenciatributaria.gob.es/wlpl/TIKE-CONT/ValidarQR?"
     )
@@ -704,17 +667,14 @@ async def test_qr_url_switches_to_production(monkeypatch: pytest.MonkeyPatch) ->
 async def test_qr_url_official_worked_example() -> None:
     """DetalleEspecificacTecnCodigoQRfactura.pdf s8.1: exact query string for a
     known nif/numserie/fecha/importe combination (no special characters)."""
-    from mcp_facturacion_electronica_es.tools.verifactu import handle_es_generate_qr_verifactu
+    from mcp_facturacion_electronica_es.tools.verifactu import es__generate_qr_verifactu
 
-    result = await handle_es_generate_qr_verifactu(
-        {
-            "nif": "89890001K",
-            "invoice_number": "12345678-G33",
-            "invoice_date": "2024-09-01",
-            "total_amount": 241.4,
-        }
+    data = await es__generate_qr_verifactu(
+        nif="89890001K",
+        invoice_number="12345678-G33",
+        invoice_date="2024-09-01",
+        total_amount=241.4,
     )
-    data = json.loads(result[0].text)
     assert data["verification_url"] == (
         "https://prewww2.aeat.es/wlpl/TIKE-CONT/ValidarQR"
         "?nif=89890001K&numserie=12345678-G33&fecha=01-09-2024&importe=241.40"
@@ -725,17 +685,14 @@ async def test_qr_url_official_worked_example() -> None:
 async def test_qr_url_encodes_special_characters_in_numserie() -> None:
     """s4 of the spec: an unencoded "&" inside numserie would truncate the
     query string; it must come out as "%26" (the doc's own worked example)."""
-    from mcp_facturacion_electronica_es.tools.verifactu import handle_es_generate_qr_verifactu
+    from mcp_facturacion_electronica_es.tools.verifactu import es__generate_qr_verifactu
 
-    result = await handle_es_generate_qr_verifactu(
-        {
-            "nif": "89890001K",
-            "invoice_number": "12345678&G33",
-            "invoice_date": "2024-01-01",
-            "total_amount": 241.4,
-        }
+    data = await es__generate_qr_verifactu(
+        nif="89890001K",
+        invoice_number="12345678&G33",
+        invoice_date="2024-01-01",
+        total_amount=241.4,
     )
-    data = json.loads(result[0].text)
     assert "numserie=12345678%26G33" in data["verification_url"]
     # Exactly 3 "&" separators for 4 params — an unencoded "&" in numserie would
     # add a bogus 5th "param" and break the query string.
@@ -745,17 +702,14 @@ async def test_qr_url_encodes_special_characters_in_numserie() -> None:
 @pytest.mark.asyncio
 async def test_qr_verifactu_includes_physical_spec() -> None:
     """QR physical spec (min size, ISO 18004, ECC level M) must be surfaced."""
-    from mcp_facturacion_electronica_es.tools.verifactu import handle_es_generate_qr_verifactu
+    from mcp_facturacion_electronica_es.tools.verifactu import es__generate_qr_verifactu
 
-    result = await handle_es_generate_qr_verifactu(
-        {
-            "nif": "B12345678",
-            "invoice_number": "2025-0001",
-            "invoice_date": "2025-03-15",
-            "total_amount": 1210.00,
-        }
+    data = await es__generate_qr_verifactu(
+        nif="B12345678",
+        invoice_number="2025-0001",
+        invoice_date="2025-03-15",
+        total_amount=1210.00,
     )
-    data = json.loads(result[0].text)
     assert data["physical_spec"]["min_size_mm"] == "30x40"
     assert data["physical_spec"]["symbology"] == "ISO/IEC 18004"
     assert data["physical_spec"]["error_correction_level"] == "M"
@@ -891,27 +845,23 @@ async def test_handle_query_verifactu_status_masks_response(
         "mcp_einvoicing_core.http_client.BaseEInvoicingClient", _FakeClient
     )
 
-    result = await verifactu_module.handle_es_query_verifactu_status(
-        {
-            "nif": "B12345678",
-            "name": "Empresa de Prueba SL",
-            "invoice_date": "2025-03-15",
-            "num_serie_factura": "2025-0001",
-        }
+    data = await verifactu_module.es__query_verifactu_status(
+        nif="B12345678",
+        name="Empresa de Prueba SL",
+        invoice_date="2025-03-15",
+        num_serie_factura="2025-0001",
     )
-    data = json.loads(result[0].text)
     assert "error" not in data
     assert data["parsed_response"]["resultado_consulta"] == "ConDatos"
     assert data["parsed_response"]["registros"][0]["EstadoRegistro"] == "Correcto"
-    assert "sfLRRC:" not in result[0].text
+    assert "sfLRRC:" not in json.dumps(data)
 
 
 @pytest.mark.asyncio
 async def test_handle_query_verifactu_status_missing_params() -> None:
     from mcp_facturacion_electronica_es.tools.verifactu import (
-        handle_es_query_verifactu_status,
+        es__query_verifactu_status,
     )
 
-    result = await handle_es_query_verifactu_status({})
-    data = json.loads(result[0].text)
+    data = await es__query_verifactu_status(nif="", name="", invoice_date="")
     assert "error" in data

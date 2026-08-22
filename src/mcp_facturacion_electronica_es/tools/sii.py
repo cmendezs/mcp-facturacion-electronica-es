@@ -15,7 +15,6 @@ import logging
 from decimal import Decimal
 from typing import Any
 
-import mcp.types as types
 from lxml import etree
 from mcp_einvoicing_core.base_server import assert_not_read_only
 from mcp_einvoicing_core.confirmation import ConfirmationGate
@@ -359,189 +358,65 @@ def build_sii_received_record(
 # Tool definitions
 # ---------------------------------------------------------------------------
 
-TOOL_ES_BUILD_SII_INVOICE_RECORD = types.Tool(
-    name="es__build_sii_invoice_record",
-    description=(
-        "Construye un registro XML AEAT SII en formato SOAP (emisión FacturaExpedida o "
-        "recepción FacturaRecibida) conforme a la guía técnica SII v3.0 (abril 2024). "
-        "Soporta TipoComunicacion A0 (alta), A1 (modificación) y A4 (baja)."
-    ),
-    inputSchema={
-        "type": "object",
-        "properties": {
-            "invoice": {
-                "type": "object",
-                "description": "Datos de la factura.",
-            },
-            "record_type": {
-                "type": "string",
-                "enum": ["issued", "received"],
-                "description": "Dirección: 'issued' (expedida) o 'received' (recibida).",
-            },
-            "communication_type": {
-                "type": "string",
-                "enum": ["A0", "A1", "A4"],
-                "description": "TipoComunicacion: A0 alta (por defecto), A1 modificación, A4 baja.",
-                "default": "A0",
-            },
-        },
-        "required": ["invoice", "record_type"],
-    },
-)
-
-TOOL_ES_SUBMIT_SII_BATCH = types.Tool(
-    name="es__submit_sii_batch",
-    description=(
-        "Envía un lote de facturas (máximo 10.000 registros) al endpoint SOAP SII de la AEAT. "
-        "Requiere AEAT_ENV, AEAT_CERTIFICATE_PATH y AEAT_CERTIFICATE_PASSWORD (MTLS)."
-    ),
-    inputSchema={
-        "type": "object",
-        "properties": {
-            "records": {
-                "type": "array",
-                "items": {"type": "string"},
-                "description": "Lista de SOAP envelopes XML de es__build_sii_invoice_record.",
-            },
-            "record_type": {
-                "type": "string",
-                "enum": ["issued", "received"],
-            },
-            "fiscal_year": {
-                "type": "integer",
-                "description": "Ejercicio fiscal (YYYY).",
-            },
-        },
-        "required": ["records", "record_type", "fiscal_year"],
-    },
-)
-
-TOOL_ES_QUERY_SII_STATUS = types.Tool(
-    name="es__query_sii_status",
-    description=(
-        "Consulta el estado de facturas en el SII mediante ConsultaFactInformadasEmitidas / "
-        "ConsultaFactInformadasRecibidas (SOAP). Filtra por ejercicio, periodo y, "
-        "opcionalmente, por NIF del emisor y numero de factura."
-    ),
-    inputSchema={
-        "type": "object",
-        "properties": {
-            "nif_titular": {
-                "type": "string",
-                "description": "NIF del titular SII (obligado tributario).",
-            },
-            "nombre_titular": {
-                "type": "string",
-                "description": "Nombre o razon social del titular.",
-            },
-            "fiscal_year": {
-                "type": "integer",
-                "description": "Ejercicio fiscal (YYYY).",
-            },
-            "period": {
-                "type": "string",
-                "description": "Periodo de liquidacion: '01'..'12' para mensual, o '0A' para anual.",
-            },
-            "record_type": {
-                "type": "string",
-                "enum": ["issued", "received"],
-                "description": "Tipo de registro: 'issued' (expedidas) o 'received' (recibidas).",
-            },
-            "invoice_number": {
-                "type": "string",
-                "description": "NumSerieFacturaEmisor para filtrar por factura concreta (opcional).",
-            },
-            "emisor_nif": {
-                "type": "string",
-                "description": "NIF del emisor para filtrar (opcional, solo para received).",
-            },
-        },
-        "required": ["nif_titular", "nombre_titular", "fiscal_year", "period", "record_type"],
-    },
-)
-
-TOOL_ES_GENERATE_SII_CORRECTION = types.Tool(
-    name="es__generate_sii_correction",
-    description=(
-        "Genera un registro de modificación SII (A1) o baja (A4) que referencia la factura "
-        "original mediante IDFactura."
-    ),
-    inputSchema={
-        "type": "object",
-        "properties": {
-            "original_invoice": {
-                "type": "object",
-                "description": "Factura original que se rectifica.",
-            },
-            "corrected_invoice": {
-                "type": "object",
-                "description": "Datos corregidos. Omitir o null para una baja (A4).",
-            },
-            "correction_type": {
-                "type": "string",
-                "enum": ["A1", "A4"],
-            },
-            "record_type": {
-                "type": "string",
-                "enum": ["issued", "received"],
-            },
-        },
-        "required": ["original_invoice", "correction_type", "record_type"],
-    },
-)
-
-
 # ---------------------------------------------------------------------------
-# Handlers
+# Tools
 # ---------------------------------------------------------------------------
 
 
-async def handle_es_build_sii_invoice_record(
-    arguments: dict[str, Any],
-) -> list[types.TextContent]:
+async def es__build_sii_invoice_record(
+    invoice: dict[str, Any],
+    record_type: str,
+    communication_type: str = "A0",
+    clave_regimen: str = "01",
+) -> dict[str, Any]:
+    """Construye un registro XML AEAT SII en formato SOAP.
+
+    Emisión FacturaExpedida o recepción FacturaRecibida, conforme a la guía
+    técnica SII v3.0 (abril 2024). Soporta TipoComunicacion A0 (alta),
+    A1 (modificación) y A4 (baja).
+
+    Args:
+        invoice: Datos de la factura.
+        record_type: Dirección: 'issued' (expedida) o 'received' (recibida).
+        communication_type: TipoComunicacion: A0 alta (por defecto),
+            A1 modificación, A4 baja.
+        clave_regimen: ClaveRegimenEspecialOTrascendencia (por defecto '01').
+    """
     try:
-        invoice_data = arguments.get("invoice")
-        if not invoice_data:
-            return err("invoice is required", "MISSING_PARAM")
-
-        record_type_str = arguments.get("record_type", "issued")
-        comm_type_str = arguments.get("communication_type", "A0")
-
         try:
-            record_type = SIIRecordType(record_type_str)
+            record_type_enum = SIIRecordType(record_type)
         except ValueError:
-            return err(f"Invalid record_type: {record_type_str!r}")
+            return err(f"Invalid record_type: {record_type!r}")
         try:
-            comm_type = SIICommunicationType(comm_type_str)
+            comm_type = SIICommunicationType(communication_type)
         except ValueError:
-            return err(f"Invalid communication_type: {comm_type_str!r}")
+            return err(f"Invalid communication_type: {communication_type!r}")
 
-        invoice = parse_invoice(invoice_data)
-        clave_regimen: str = arguments.get("clave_regimen", "01")
+        parsed_invoice = parse_invoice(invoice)
 
-        if record_type == SIIRecordType.issued:
+        if record_type_enum == SIIRecordType.issued:
             xml_bytes = build_sii_issued_record(
-                invoice,
+                parsed_invoice,
                 comm_type.value,
                 clave_regimen=clave_regimen,
             )
         else:
-            xml_bytes = build_sii_received_record(invoice, comm_type.value)
+            xml_bytes = build_sii_received_record(parsed_invoice, comm_type.value)
 
         logger.info(
             "SII %s record built for %s / %s (comm_type=%s)",
-            record_type.value,
-            invoice.seller.tax_id.identifier,
-            invoice.number,
+            record_type_enum.value,
+            parsed_invoice.seller.tax_id.identifier,
+            parsed_invoice.number,
             comm_type.value,
         )
 
         return ok(
             {
                 "xml": xml_bytes.decode("utf-8"),
-                "record_type": record_type.value,
+                "record_type": record_type_enum.value,
                 "communication_type": comm_type.value,
-                "invoice_number": invoice.number,
+                "invoice_number": parsed_invoice.number,
             }
         )
 
@@ -552,16 +427,28 @@ async def handle_es_build_sii_invoice_record(
         return err(str(exc))
 
 
-async def handle_es_submit_sii_batch(
-    arguments: dict[str, Any],
-) -> list[types.TextContent]:
+async def es__submit_sii_batch(
+    records: list[str],
+    record_type: str,
+    fiscal_year: int,
+    confirmation_token: str | None = None,
+) -> dict[str, Any]:
+    """Envía un lote de facturas (máximo 10.000 registros) al endpoint SOAP SII de la AEAT.
+
+    Requiere AEAT_ENV, AEAT_CERTIFICATE_PATH y AEAT_CERTIFICATE_PASSWORD (MTLS).
+
+    HUMAN-IN-THE-LOOP: llame sin confirmation_token para recibir un resumen de
+    confirmación y un token; muéstrelo al usuario y vuelva a llamar con
+    confirmation_token para ejecutar el envío real.
+
+    Args:
+        records: Lista de SOAP envelopes XML de es__build_sii_invoice_record.
+        record_type: 'issued' o 'received'.
+        fiscal_year: Ejercicio fiscal (YYYY).
+        confirmation_token: Token de la respuesta awaiting_confirmation previa.
+    """
     try:
         from mcp_einvoicing_core.http_client import AuthMode, BaseEInvoicingClient
-
-        records = arguments.get("records", [])
-        record_type_str = arguments.get("record_type", "issued")
-        fiscal_year = arguments.get("fiscal_year")
-        confirmation_token: str | None = arguments.get("confirmation_token") or None
 
         if not records:
             return err("records is required and must not be empty", "MISSING_PARAM")
@@ -569,9 +456,9 @@ async def handle_es_submit_sii_batch(
             return err("fiscal_year is required", "MISSING_PARAM")
 
         try:
-            record_type = SIIRecordType(record_type_str)
+            record_type_enum = SIIRecordType(record_type)
         except ValueError:
-            return err(f"Invalid record_type: {record_type_str!r}")
+            return err(f"Invalid record_type: {record_type!r}")
 
         if len(records) > 10_000:
             return err(
@@ -587,7 +474,7 @@ async def handle_es_submit_sii_batch(
                 gate.pending_response(
                     action="es__submit_sii_batch",
                     summary=(
-                        f"Submit {len(records)} SII {record_type_str} record(s) to AEAT "
+                        f"Submit {len(records)} SII {record_type} record(s) to AEAT "
                         f"({env_label}, ejercicio {fiscal_year}). "
                         "SII records are immediately reported to the Tax Agency."
                     ),
@@ -597,7 +484,9 @@ async def handle_es_submit_sii_batch(
 
         env = aeat_env()
         endpoints = (
-            SII_ISSUED_ENDPOINTS if record_type == SIIRecordType.issued else SII_RECEIVED_ENDPOINTS
+            SII_ISSUED_ENDPOINTS
+            if record_type_enum == SIIRecordType.issued
+            else SII_RECEIVED_ENDPOINTS
         )
         base_url = endpoints[env]["primary"]
 
@@ -634,7 +523,7 @@ async def handle_es_submit_sii_batch(
             seller_nif=seller_nif,
             seller_name=seller_name,
             comm_type="A0",
-            record_type=record_type,
+            record_type=record_type_enum,
         )
 
         try:
@@ -663,7 +552,7 @@ async def handle_es_submit_sii_batch(
         return ok(
             {
                 "environment": env,
-                "record_type": record_type.value,
+                "record_type": record_type_enum.value,
                 "fiscal_year": fiscal_year,
                 "submitted": len(records),
                 "status_code": status_code,
@@ -731,23 +620,33 @@ def _build_sii_consulta_envelope(
     return etree.tostring(envelope, xml_declaration=True, encoding="UTF-8", pretty_print=True)
 
 
-async def handle_es_query_sii_status(
-    arguments: dict[str, Any],
-) -> list[types.TextContent]:
-    """Query SII invoice status via SOAP ConsultaFactInformadasEmitidas/Recibidas.
+async def es__query_sii_status(
+    nif_titular: str,
+    nombre_titular: str,
+    fiscal_year: int,
+    period: str,
+    record_type: str = "issued",
+    invoice_number: str | None = None,
+    emisor_nif: str | None = None,
+) -> dict[str, Any]:
+    """Consulta el estado de facturas en el SII mediante ConsultaFactInformadasEmitidas/Recibidas (SOAP).
 
-    ES-LC-2: replaced non-functional REST GET with correct SOAP envelope.
+    ES-LC-2: reemplaza el REST GET no funcional por el envelope SOAP correcto.
+    Filtra por ejercicio, periodo y, opcionalmente, por NIF del emisor y
+    numero de factura.
+
+    Args:
+        nif_titular: NIF del titular SII (obligado tributario).
+        nombre_titular: Nombre o razon social del titular.
+        fiscal_year: Ejercicio fiscal (YYYY).
+        period: Periodo de liquidacion: '01'..'12' para mensual, o '0A' para anual.
+        record_type: Tipo de registro: 'issued' (expedidas) o 'received' (recibidas).
+        invoice_number: NumSerieFacturaEmisor para filtrar por factura concreta
+            (opcional).
+        emisor_nif: NIF del emisor para filtrar (opcional, solo para received).
     """
     try:
         from mcp_einvoicing_core.http_client import AuthMode, BaseEInvoicingClient
-
-        nif_titular = arguments.get("nif_titular", "")
-        nombre_titular = arguments.get("nombre_titular", "")
-        fiscal_year = arguments.get("fiscal_year")
-        period = arguments.get("period", "")
-        record_type_str = arguments.get("record_type", "issued")
-        invoice_number: str | None = arguments.get("invoice_number") or None
-        emisor_nif: str | None = arguments.get("emisor_nif") or None
 
         for name, val in [
             ("nif_titular", nif_titular),
@@ -760,16 +659,16 @@ async def handle_es_query_sii_status(
             return err("fiscal_year is required", "MISSING_PARAM")
 
         try:
-            record_type = SIIRecordType(record_type_str)
+            record_type_enum = SIIRecordType(record_type)
         except ValueError:
-            return err(f"Invalid record_type: {record_type_str!r}")
+            return err(f"Invalid record_type: {record_type!r}")
 
         soap_bytes = _build_sii_consulta_envelope(
             nif=nif_titular,
             name=nombre_titular,
             fiscal_year=int(fiscal_year),
             period=period,
-            record_type=record_type,
+            record_type=record_type_enum,
             invoice_number=invoice_number,
             emisor_nif=emisor_nif,
         )
@@ -784,7 +683,7 @@ async def handle_es_query_sii_status(
                         "AEAT_CERTIFICATE_PATH no configurado — SOAP envelope generado pero no enviado. "
                         "Configure el certificado FNMT-RCM para enviar la consulta."
                     ),
-                    "record_type": record_type.value,
+                    "record_type": record_type_enum.value,
                     "fiscal_year": fiscal_year,
                     "period": period,
                 }
@@ -792,7 +691,9 @@ async def handle_es_query_sii_status(
 
         env = aeat_env()
         endpoints = (
-            SII_ISSUED_ENDPOINTS if record_type == SIIRecordType.issued else SII_RECEIVED_ENDPOINTS
+            SII_ISSUED_ENDPOINTS
+            if record_type_enum == SIIRecordType.issued
+            else SII_RECEIVED_ENDPOINTS
         )
         cert_password = aeat_settings.certificate_password
         client = BaseEInvoicingClient(
@@ -824,14 +725,14 @@ async def handle_es_query_sii_status(
 
         logger.info(
             "SII consulta %s: ejercicio=%s periodo=%s status=%s",
-            record_type.value,
+            record_type_enum.value,
             fiscal_year,
             period,
             response.status_code,
         )
         return ok(
             {
-                "record_type": record_type.value,
+                "record_type": record_type_enum.value,
                 "fiscal_year": fiscal_year,
                 "period": period,
                 "environment": env,
@@ -845,37 +746,42 @@ async def handle_es_query_sii_status(
         return err(str(exc))
 
 
-async def handle_es_generate_sii_correction(
-    arguments: dict[str, Any],
-) -> list[types.TextContent]:
+async def es__generate_sii_correction(
+    original_invoice: dict[str, Any],
+    correction_type: str,
+    record_type: str,
+    corrected_invoice: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Genera un registro de modificación SII (A1) o baja (A4).
+
+    Referencia la factura original mediante IDFactura.
+
+    Args:
+        original_invoice: Factura original que se rectifica.
+        correction_type: 'A1' (modificación) o 'A4' (baja).
+        record_type: 'issued' o 'received'.
+        corrected_invoice: Datos corregidos. Omitir para una baja (A4).
+    """
     try:
-        original_data = arguments.get("original_invoice")
-        if not original_data:
-            return err("original_invoice is required", "MISSING_PARAM")
-
-        correction_type_str = arguments.get("correction_type", "A1")
-        record_type_str = arguments.get("record_type", "issued")
-
         try:
-            comm_type = SIICommunicationType(correction_type_str)
+            comm_type = SIICommunicationType(correction_type)
         except ValueError:
-            return err(f"Invalid correction_type: {correction_type_str!r}. Must be A1 or A4.")
+            return err(f"Invalid correction_type: {correction_type!r}. Must be A1 or A4.")
         if comm_type not in (SIICommunicationType.A1, SIICommunicationType.A4):
             return err("correction_type must be A1 (modification) or A4 (removal).")
 
         try:
-            record_type = SIIRecordType(record_type_str)
+            record_type_enum = SIIRecordType(record_type)
         except ValueError:
-            return err(f"Invalid record_type: {record_type_str!r}")
+            return err(f"Invalid record_type: {record_type!r}")
 
-        original = parse_invoice(original_data)
+        original = parse_invoice(original_invoice)
 
         # For A4 (baja), only the original invoice identity is needed
         # For A1, use the corrected invoice if provided, otherwise the original
-        corrected_data = arguments.get("corrected_invoice")
-        target = parse_invoice(corrected_data) if corrected_data else original
+        target = parse_invoice(corrected_invoice) if corrected_invoice else original
 
-        if record_type == SIIRecordType.issued:
+        if record_type_enum == SIIRecordType.issued:
             xml_bytes = build_sii_issued_record(target, comm_type.value)
         else:
             xml_bytes = build_sii_received_record(target, comm_type.value)
@@ -884,7 +790,7 @@ async def handle_es_generate_sii_correction(
             {
                 "xml": xml_bytes.decode("utf-8"),
                 "correction_type": comm_type.value,
-                "record_type": record_type.value,
+                "record_type": record_type_enum.value,
                 "original_invoice_number": original.number,
             }
         )

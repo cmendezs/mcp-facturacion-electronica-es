@@ -104,13 +104,9 @@ def test_detect_regime_high_turnover_with_sii() -> None:
 
 @pytest.mark.asyncio
 async def test_handle_detect_regional_regime_madrid() -> None:
-    from mcp_facturacion_electronica_es.tools.utils import handle_es_detect_regional_regime
+    from mcp_facturacion_electronica_es.tools.utils import es__detect_regional_regime
 
-    result = await handle_es_detect_regional_regime({"province_code": "28"})
-    assert len(result) == 1
-    import json
-
-    data = json.loads(result[0].text)
+    data = await es__detect_regional_regime(province_code="28")
     assert data["regime"] == SpanishRegime.VERIFACTU
     assert data["province_code"] == "28"
     assert data["enrolled_in_sii"] is False
@@ -119,12 +115,9 @@ async def test_handle_detect_regional_regime_madrid() -> None:
 @pytest.mark.asyncio
 async def test_handle_detect_regional_regime_araba() -> None:
     """Araba uses TicketBAI (out of scope) — tool returns VERIFACTU + out_of_scope_warning."""
-    from mcp_facturacion_electronica_es.tools.utils import handle_es_detect_regional_regime
+    from mcp_facturacion_electronica_es.tools.utils import es__detect_regional_regime
 
-    result = await handle_es_detect_regional_regime({"province_code": "01"})
-    import json
-
-    data = json.loads(result[0].text)
+    data = await es__detect_regional_regime(province_code="01")
     assert data["regime"] == SpanishRegime.VERIFACTU
     assert "out_of_scope_warning" in data
     assert "TicketBAI" in data["out_of_scope_warning"]
@@ -132,23 +125,17 @@ async def test_handle_detect_regional_regime_araba() -> None:
 
 @pytest.mark.asyncio
 async def test_handle_detect_regional_regime_missing_param() -> None:
-    from mcp_facturacion_electronica_es.tools.utils import handle_es_detect_regional_regime
+    from mcp_facturacion_electronica_es.tools.utils import es__detect_regional_regime
 
-    result = await handle_es_detect_regional_regime({})
-    import json
-
-    data = json.loads(result[0].text)
+    data = await es__detect_regional_regime(province_code="")
     assert "error" in data
 
 
 @pytest.mark.asyncio
 async def test_handle_get_compliance_status_is_madrid() -> None:
-    from mcp_facturacion_electronica_es.tools.utils import handle_es_get_compliance_status
+    from mcp_facturacion_electronica_es.tools.utils import es__get_compliance_status
 
-    result = await handle_es_get_compliance_status({"entity_type": "IS", "province_code": "28"})
-    import json
-
-    data = json.loads(result[0].text)
+    data = await es__get_compliance_status(entity_type="IS", province_code="28")
     assert data["entity_type"] == EntityType.IS
     assert data["detected_regime"] == SpanishRegime.VERIFACTU
     assert len(data["applicable_systems"]) >= 1
@@ -160,33 +147,25 @@ async def test_handle_get_compliance_status_is_madrid() -> None:
 @pytest.mark.asyncio
 async def test_handle_get_compliance_status_basque_out_of_scope() -> None:
     """Gipuzkoa uses TicketBAI (out of scope) — tool returns VERIFACTU + out_of_scope_warning."""
-    from mcp_facturacion_electronica_es.tools.utils import handle_es_get_compliance_status
+    from mcp_facturacion_electronica_es.tools.utils import es__get_compliance_status
 
-    result = await handle_es_get_compliance_status(
-        {"entity_type": "IS", "province_code": "20"}  # Gipuzkoa
-    )
-    import json
-
-    data = json.loads(result[0].text)
+    data = await es__get_compliance_status(entity_type="IS", province_code="20")  # Gipuzkoa
     assert data["detected_regime"] == SpanishRegime.VERIFACTU
     assert "out_of_scope_warning" in data
 
 
 @pytest.mark.asyncio
 async def test_handle_check_b2b_mandate_applicability_sii_exclusion() -> None:
-    from mcp_facturacion_electronica_es.tools.b2b import handle_es_check_b2b_mandate_applicability
-
-    result = await handle_es_check_b2b_mandate_applicability(
-        {
-            "annual_turnover_eur": 10_000_000,
-            "tax_address_province_code": "28",
-            "enrolled_in_sii": True,
-            "entity_type": "IS",
-        }
-    )
     import json
 
-    data = json.loads(result[0].text)
+    from mcp_facturacion_electronica_es.tools.b2b import es__check_b2b_mandate_applicability
+
+    data = await es__check_b2b_mandate_applicability(
+        annual_turnover_eur=10_000_000,
+        tax_address_province_code="28",
+        enrolled_in_sii=True,
+        entity_type="IS",
+    )
     assert data["primary_regime"] == SpanishRegime.VERIFACTU_SII
     assert data["sii_exclusion_applies"] is True
 
@@ -209,26 +188,21 @@ async def test_handle_check_b2b_mandate_applicability_sii_exclusion() -> None:
 
 @pytest.mark.asyncio
 async def test_handle_check_b2b_mandate_applicability_below_8m_threshold() -> None:
-    from mcp_facturacion_electronica_es.tools.b2b import handle_es_check_b2b_mandate_applicability
+    from mcp_facturacion_electronica_es.tools.b2b import es__check_b2b_mandate_applicability
 
-    result = await handle_es_check_b2b_mandate_applicability(
-        {
-            "annual_turnover_eur": 1_000_000,
-            "tax_address_province_code": "28",
-            "enrolled_in_sii": False,
-            "entity_type": "IS",
-        }
+    data = await es__check_b2b_mandate_applicability(
+        annual_turnover_eur=1_000_000,
+        tax_address_province_code="28",
+        enrolled_in_sii=False,
+        entity_type="IS",
     )
-    import json
-
-    data = json.loads(result[0].text)
     timeline = data["b2b_mandate_timeline"]
     assert timeline["this_taxpayer_months_after_om"] == 24
 
 
 @pytest.mark.asyncio
 async def test_handle_parse_aeat_response_verifactu() -> None:
-    from mcp_facturacion_electronica_es.tools.utils import handle_es_parse_aeat_response
+    from mcp_facturacion_electronica_es.tools.utils import es__parse_aeat_response
 
     xml = """<?xml version="1.0" encoding="UTF-8"?>
 <RespuestaRegFactuSistemaFacturacion>
@@ -236,10 +210,7 @@ async def test_handle_parse_aeat_response_verifactu() -> None:
   <CSV>ABC123XYZ</CSV>
 </RespuestaRegFactuSistemaFacturacion>"""
 
-    result = await handle_es_parse_aeat_response({"xml": xml, "response_type": "verifactu"})
-    import json
-
-    data = json.loads(result[0].text)
+    data = await es__parse_aeat_response(xml=xml, response_type="verifactu")
     assert data["success"] is True
     assert data["estado_envio"] == "Correcto"
     assert data["csv"] == "ABC123XYZ"
@@ -247,12 +218,9 @@ async def test_handle_parse_aeat_response_verifactu() -> None:
 
 @pytest.mark.asyncio
 async def test_handle_parse_aeat_response_invalid_xml() -> None:
-    from mcp_facturacion_electronica_es.tools.utils import handle_es_parse_aeat_response
+    from mcp_facturacion_electronica_es.tools.utils import es__parse_aeat_response
 
-    result = await handle_es_parse_aeat_response({"xml": "not xml at all <<<"})
-    import json
-
-    data = json.loads(result[0].text)
+    data = await es__parse_aeat_response(xml="not xml at all <<<")
     assert "error" in data
 
 

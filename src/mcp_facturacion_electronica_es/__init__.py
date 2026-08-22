@@ -10,5 +10,5 @@ Standards:
     B2B:        EN 16931 / UBL 2.1 (Ley 18/2022 Crea y Crece)
 """
 
-__version__ = "0.2.0"
+__version__ = "0.8.0"
 __author__ = "cmendezs"

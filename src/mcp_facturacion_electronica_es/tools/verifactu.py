@@ -41,7 +41,6 @@ from decimal import Decimal
 from typing import Any
 from urllib.parse import quote_plus
 
-import mcp.types as types
 from lxml import etree
 from mcp_einvoicing_core.base_server import assert_not_read_only
 from mcp_einvoicing_core.confirmation import ConfirmationGate
@@ -436,7 +435,7 @@ def _extract_chain_identity(xml_bytes: bytes) -> dict[str, str] | None:
     RegistroAlta/RegistroAnulacion just submitted, for use as the next
     record's previous_hash/previous_emisor_nif/previous_num_serie/
     previous_fecha — but only once the caller has confirmed AEAT accepted it
-    (see _CHAIN_SAFE_ESTADOS and handle_es_submit_verifactu_to_aeat).
+    (see _CHAIN_SAFE_ESTADOS and es__submit_verifactu_to_aeat).
 
     Scoped to the RegistroAlta/RegistroAnulacion element's *direct* IDFactura
     and Huella children — not the same-named fields inside
@@ -494,7 +493,7 @@ def _build_chain_result(
     parsed_response: dict[str, Any],
     xml_bytes: bytes,
 ) -> dict[str, Any]:
-    """Build the ``chain`` block returned by handle_es_submit_verifactu_to_aeat.
+    """Build the ``chain`` block returned by es__submit_verifactu_to_aeat.
 
     Enforces the accepted-only chain contract: the identity to use as the
     *next* record's previous_hash/previous_emisor_nif/previous_num_serie/
@@ -632,221 +631,48 @@ def _parse_consulta_lr_response(raw: str) -> dict[str, Any]:
 # Tool definitions
 # ---------------------------------------------------------------------------
 
-TOOL_ES_GENERATE_VERIFACTU_RECORD = types.Tool(
-    name="es__generate_verifactu_record",
-    description=(
-        "Genera un registro de factura VERI*FACTU (Orden HAC/1177/2024) con cadena SHA-256 Huella. "
-        "Devuelve el XML del registro y la Huella para encadenar con el siguiente registro. "
-        "Llame a es__detect_regional_regime antes para confirmar que el régimen es VERIFACTU."
-    ),
-    inputSchema={
-        "type": "object",
-        "properties": {
-            "invoice": {
-                "type": "object",
-                "description": "Datos de la factura (date, number, seller, buyer, vat_summary, note).",
-            },
-            "previous_hash": {
-                "type": "string",
-                "description": "Huella SHA-256 del registro precedente (omitir o null para el primero).",
-            },
-            "previous_emisor_nif": {
-                "type": "string",
-                "description": "NIF del emisor del registro anterior (requerido si previous_hash está presente).",
-            },
-            "previous_num_serie": {
-                "type": "string",
-                "description": "NumSerieFactura del registro anterior (requerido si previous_hash está presente).",
-            },
-            "previous_fecha": {
-                "type": "string",
-                "description": "FechaExpedicionFactura del registro anterior en DD-MM-YYYY (requerido si previous_hash está presente).",
-            },
-            "software_id": {
-                "type": "string",
-                "description": "IDSistemaInformatico del software certificado.",
-            },
-            "software_nif": {
-                "type": "string",
-                "description": "NIF del fabricante del software.",
-            },
-            "invoice_type": {
-                "type": "string",
-                "enum": ["F1", "F2", "F3", "R1", "R2", "R3", "R4", "R5"],
-                "description": "TipoFactura según HAC/1177/2024 Annex I.",
-            },
-        },
-        "required": ["invoice", "software_id", "software_nif", "invoice_type"],
-    },
-)
-
-TOOL_ES_VALIDATE_VERIFACTU_RECORD = types.Tool(
-    name="es__validate_verifactu_record",
-    description=(
-        "Valida un registro VERI*FACTU XML. Realiza validación estructural y, si el XSD v1.0 "
-        "(HAC/1177/2024) está disponible en specs/verifactu/, también validación de esquema."
-    ),
-    inputSchema={
-        "type": "object",
-        "properties": {
-            "xml": {"type": "string", "description": "Registro VERI*FACTU XML en crudo."},
-            "schema_version": {
-                "type": "string",
-                "description": "Versión del esquema XSD (por defecto: '1.0').",
-                "default": "1.0",
-            },
-        },
-        "required": ["xml"],
-    },
-)
-
-TOOL_ES_SUBMIT_VERIFACTU_TO_AEAT = types.Tool(
-    name="es__submit_verifactu_to_aeat",
-    description=(
-        "Envía un registro VERI*FACTU firmado al endpoint en tiempo real de la AEAT mediante MTLS "
-        "(certificado FNMT-RCM). Requiere AEAT_ENV, AEAT_CERTIFICATE_PATH y AEAT_CERTIFICATE_PASSWORD. "
-        "Si la respuesta trae parsed_response.status == 'deferred' (TiempoEsperaEnvio), espere "
-        "retry_after_seconds y llame a es__query_verifactu_status para confirmar el EstadoRegistro "
-        "final antes de encadenar el siguiente registro."
-    ),
-    inputSchema={
-        "type": "object",
-        "properties": {
-            "xml": {"type": "string", "description": "Registro VERI*FACTU XML firmado."},
-            "nif": {"type": "string", "description": "NIF del remitente."},
-        },
-        "required": ["xml", "nif"],
-    },
-)
-
-TOOL_ES_QUERY_VERIFACTU_STATUS = types.Tool(
-    name="es__query_verifactu_status",
-    description=(
-        "Consulta el EstadoRegistro de un registro VERI*FACTU ya enviado "
-        "(ConsultaFactuSistemaFacturacion / ConsultaLR.xsd). Use esta tool tras un resultado "
-        "'deferred' de es__submit_verifactu_to_aeat, esperando retry_after_seconds, para "
-        "confirmar el estado final (Correcto / AceptadoConErrores / Anulado) antes de "
-        "encadenar el siguiente registro. Requiere AEAT_ENV, AEAT_CERTIFICATE_PATH y "
-        "AEAT_CERTIFICATE_PASSWORD, igual que es__submit_verifactu_to_aeat."
-    ),
-    inputSchema={
-        "type": "object",
-        "properties": {
-            "nif": {"type": "string", "description": "NIF del obligado a la emisión (ObligadoEmision)."},
-            "name": {"type": "string", "description": "Nombre/razón social del obligado a la emisión."},
-            "invoice_date": {
-                "type": "string",
-                "description": "Fecha de la factura consultada, YYYY-MM-DD (determina PeriodoImputacion).",
-            },
-            "num_serie_factura": {
-                "type": "string",
-                "description": "NumSerieFactura a filtrar (omitir para consultar todo el período).",
-            },
-        },
-        "required": ["nif", "name", "invoice_date"],
-    },
-)
-
-TOOL_ES_GENERATE_QR_VERIFACTU = types.Tool(
-    name="es__generate_qr_verifactu",
-    description=(
-        "Genera el código QR obligatorio VERI*FACTU (HAC/1177/2024 Art. 10) como PNG en base64. "
-        "Encodes la URL de verificación de la AEAT: "
-        "https://www2.agenciatributaria.gob.es/wlpl/TIKE-CONT/ValidarQR?..."
-    ),
-    inputSchema={
-        "type": "object",
-        "properties": {
-            "nif": {"type": "string", "description": "NIF del emisor."},
-            "invoice_number": {"type": "string", "description": "NumSerieFactura."},
-            "invoice_date": {
-                "type": "string",
-                "description": "FechaExpedicionFactura en YYYY-MM-DD.",
-            },
-            "total_amount": {
-                "type": "number",
-                "description": "ImporteTotal de la factura (con IVA incluido).",
-            },
-            "size_px": {
-                "type": "integer",
-                "description": "Tamaño del QR en píxeles (por defecto: 200).",
-                "default": 200,
-            },
-        },
-        "required": ["nif", "invoice_number", "invoice_date", "total_amount"],
-    },
-)
-
-TOOL_ES_CANCEL_VERIFACTU_RECORD = types.Tool(
-    name="es__cancel_verifactu_record",
-    description=(
-        "Genera un registro de anulacion VERI*FACTU (TipoHuella=01) "
-        "encadenado a la secuencia de huellas actual."
-    ),
-    inputSchema={
-        "type": "object",
-        "properties": {
-            "original_invoice_number": {
-                "type": "string",
-                "description": "NumSerieFactura a anular.",
-            },
-            "original_invoice_date": {
-                "type": "string",
-                "description": "FechaExpedicionFactura original (YYYY-MM-DD).",
-            },
-            "issuer_nif": {"type": "string", "description": "NIF del emisor."},
-            "issuer_name": {"type": "string", "description": "Nombre/razon social del emisor."},
-            "previous_hash": {
-                "type": "string",
-                "description": "Huella del ultimo registro en la cadena.",
-            },
-            "previous_emisor_nif": {
-                "type": "string",
-                "description": "NIF del emisor del registro anterior (IDEmisorFactura en EncadenamientoFacturaAnteriorType).",
-            },
-            "previous_num_serie": {
-                "type": "string",
-                "description": "NumSerieFactura del registro anterior.",
-            },
-            "previous_fecha": {
-                "type": "string",
-                "description": "FechaExpedicionFactura del registro anterior en DD-MM-YYYY.",
-            },
-        },
-        "required": [
-            "original_invoice_number",
-            "original_invoice_date",
-            "issuer_nif",
-            "issuer_name",
-            "previous_hash",
-        ],
-    },
-)
-
 # ---------------------------------------------------------------------------
-# Handlers
+# Tools
 # ---------------------------------------------------------------------------
 
 
-async def handle_es_generate_verifactu_record(
-    arguments: dict[str, Any],
-) -> list[types.TextContent]:
+async def es__generate_verifactu_record(
+    invoice: dict[str, Any],
+    software_id: str,
+    software_nif: str,
+    invoice_type: str = "F1",
+    previous_hash: str | None = None,
+    previous_emisor_nif: str | None = None,
+    previous_num_serie: str | None = None,
+    previous_fecha: str | None = None,
+    clave_regimen: str = "01",
+    impuesto: str = "01",
+    calificacion_operacion: str = "S1",
+) -> dict[str, Any]:
+    """Genera un registro de factura VERI*FACTU (Orden HAC/1177/2024) con cadena SHA-256 Huella.
+
+    Devuelve el XML del registro y la Huella para encadenar con el siguiente registro.
+    Llame a es__detect_regional_regime antes para confirmar que el régimen es VERIFACTU.
+
+    Args:
+        invoice: Datos de la factura (date, number, seller, buyer, vat_summary, note).
+        software_id: IDSistemaInformatico del software certificado.
+        software_nif: NIF del fabricante del software.
+        invoice_type: TipoFactura según HAC/1177/2024 Annex I
+            (F1, F2, F3, R1, R2, R3, R4, R5).
+        previous_hash: Huella SHA-256 del registro precedente (omitir para el primero).
+        previous_emisor_nif: NIF del emisor del registro anterior (requerido si
+            previous_hash está presente).
+        previous_num_serie: NumSerieFactura del registro anterior (requerido si
+            previous_hash está presente).
+        previous_fecha: FechaExpedicionFactura del registro anterior en DD-MM-YYYY
+            (requerido si previous_hash está presente).
+        clave_regimen: ClaveRegimenEspecialOTrascendencia (por defecto '01').
+        impuesto: Código de impuesto (por defecto '01' IVA).
+        calificacion_operacion: CalificacionOperacion (por defecto 'S1').
+    """
     try:
-        invoice_data = arguments.get("invoice")
-        if not invoice_data:
-            return err("invoice is required", "MISSING_PARAM")
-
-        invoice = parse_invoice(invoice_data)
-        invoice_type = arguments.get("invoice_type", "F1")
-        software_id = arguments.get("software_id", "")
-        software_nif = arguments.get("software_nif", "")
-        previous_hash: str | None = arguments.get("previous_hash") or None
-        previous_emisor_nif: str | None = arguments.get("previous_emisor_nif") or None
-        previous_num_serie: str | None = arguments.get("previous_num_serie") or None
-        previous_fecha: str | None = arguments.get("previous_fecha") or None
-        clave_regimen: str = arguments.get("clave_regimen", "01")
-        impuesto: str = arguments.get("impuesto", "01")
-        calificacion_operacion: str = arguments.get("calificacion_operacion", "S1")
+        parsed_invoice = parse_invoice(invoice)
 
         try:
             VerifactuInvoiceType(invoice_type)
@@ -878,7 +704,7 @@ async def handle_es_generate_verifactu_record(
             fecha_hora_gen = fecha_hora_gen[:-2] + ":" + fecha_hora_gen[-2:]
 
         ra, huella = _build_registro_alta(
-            invoice=invoice,
+            invoice=parsed_invoice,
             invoice_type=invoice_type,
             software_id=software_id,
             software_nif=software_nif,
@@ -893,15 +719,15 @@ async def handle_es_generate_verifactu_record(
         )
 
         xml_bytes = _wrap_registro_facturacion(
-            emisor_nif=invoice.seller.tax_id.identifier,
-            emisor_name=invoice.seller.display_name,
+            emisor_nif=parsed_invoice.seller.tax_id.identifier,
+            emisor_name=parsed_invoice.seller.display_name,
             inner=ra,
         )
 
         logger.info(
             "VERI*FACTU record generated: %s / %s → huella=%s...",
-            invoice.seller.tax_id.identifier,
-            invoice.number,
+            parsed_invoice.seller.tax_id.identifier,
+            parsed_invoice.number,
             huella[:16],
         )
 
@@ -910,9 +736,9 @@ async def handle_es_generate_verifactu_record(
             "huella": huella,
             "fecha_hora_gen": fecha_hora_gen,
             "invoice_id": {
-                "emisor_nif": invoice.seller.tax_id.identifier,
-                "num_serie": invoice.number,
-                "fecha": fmt_date_es(invoice.date),
+                "emisor_nif": parsed_invoice.seller.tax_id.identifier,
+                "num_serie": parsed_invoice.number,
+                "fecha": fmt_date_es(parsed_invoice.date),
             },
             "note": (
                 "Sign with XAdES before submission — "
@@ -930,15 +756,25 @@ async def handle_es_generate_verifactu_record(
         return err(str(exc))
 
 
-async def handle_es_validate_verifactu_record(
-    arguments: dict[str, Any],
-) -> list[types.TextContent]:
+async def es__validate_verifactu_record(
+    xml: str,
+    schema_version: str = "1.0",
+) -> dict[str, Any]:
+    """Valida un registro VERI*FACTU XML.
+
+    Realiza validación estructural y, si el XSD v1.0 (HAC/1177/2024) está
+    disponible en specs/verifactu/, también validación de esquema.
+
+    Args:
+        xml: Registro VERI*FACTU XML en crudo.
+        schema_version: Versión del esquema XSD (por defecto: '1.0').
+    """
+    del schema_version  # reserved for future multi-version XSD selection
     try:
-        xml_str = arguments.get("xml", "")
-        if not xml_str:
+        if not xml:
             return err("xml is required", "MISSING_PARAM")
 
-        xml_bytes = xml_str.encode() if isinstance(xml_str, str) else xml_str
+        xml_bytes = xml.encode() if isinstance(xml, str) else xml
 
         # --- Structural parse ---
         try:
@@ -1034,14 +870,30 @@ async def handle_es_validate_verifactu_record(
         return err(str(exc))
 
 
-async def handle_es_submit_verifactu_to_aeat(
-    arguments: dict[str, Any],
-) -> list[types.TextContent]:
+async def es__submit_verifactu_to_aeat(
+    xml: str,
+    nif: str,
+    confirmation_token: str | None = None,
+) -> dict[str, Any]:
+    """Envía un registro VERI*FACTU firmado al endpoint en tiempo real de la AEAT mediante MTLS.
+
+    Usa el certificado FNMT-RCM. Requiere AEAT_ENV, AEAT_CERTIFICATE_PATH y
+    AEAT_CERTIFICATE_PASSWORD. Si la respuesta trae parsed_response.status ==
+    'deferred' (TiempoEsperaEnvio), espere retry_after_seconds y llame a
+    es__query_verifactu_status para confirmar el EstadoRegistro final antes de
+    encadenar el siguiente registro.
+
+    HUMAN-IN-THE-LOOP: llame sin confirmation_token para recibir un resumen de
+    confirmación y un token; muéstrelo al usuario y vuelva a llamar con
+    confirmation_token para ejecutar el envío real.
+
+    Args:
+        xml: Registro VERI*FACTU XML firmado.
+        nif: NIF del remitente.
+        confirmation_token: Token de la respuesta awaiting_confirmation previa.
+    """
     try:
-        xml_str = arguments.get("xml", "")
-        nif = arguments.get("nif", "")
-        confirmation_token: str | None = arguments.get("confirmation_token") or None
-        if not xml_str:
+        if not xml:
             return err("xml is required", "MISSING_PARAM")
         if not nif:
             return err("nif is required", "MISSING_PARAM")
@@ -1063,7 +915,7 @@ async def handle_es_submit_verifactu_to_aeat(
 
         env = aeat_env()
         base_url = VERIFACTU_ENDPOINTS[env]
-        xml_bytes = xml_str.encode() if isinstance(xml_str, str) else xml_str
+        xml_bytes = xml.encode() if isinstance(xml, str) else xml
 
         if SignerClient.is_configured():
             signer = SignerClient.from_env()
@@ -1135,15 +987,30 @@ async def handle_es_submit_verifactu_to_aeat(
         return err(str(exc))
 
 
-async def handle_es_query_verifactu_status(
-    arguments: dict[str, Any],
-) -> list[types.TextContent]:
-    try:
-        nif = arguments.get("nif", "")
-        name = arguments.get("name", "")
-        invoice_date = arguments.get("invoice_date", "")
-        num_serie_factura: str | None = arguments.get("num_serie_factura") or None
+async def es__query_verifactu_status(
+    nif: str,
+    name: str,
+    invoice_date: str,
+    num_serie_factura: str | None = None,
+) -> dict[str, Any]:
+    """Consulta el EstadoRegistro de un registro VERI*FACTU ya enviado.
 
+    (ConsultaFactuSistemaFacturacion / ConsultaLR.xsd). Use esta tool tras un
+    resultado 'deferred' de es__submit_verifactu_to_aeat, esperando
+    retry_after_seconds, para confirmar el estado final (Correcto /
+    AceptadoConErrores / Anulado) antes de encadenar el siguiente registro.
+    Requiere AEAT_ENV, AEAT_CERTIFICATE_PATH y AEAT_CERTIFICATE_PASSWORD, igual
+    que es__submit_verifactu_to_aeat.
+
+    Args:
+        nif: NIF del obligado a la emisión (ObligadoEmision).
+        name: Nombre/razón social del obligado a la emisión.
+        invoice_date: Fecha de la factura consultada, YYYY-MM-DD (determina
+            PeriodoImputacion).
+        num_serie_factura: NumSerieFactura a filtrar (omitir para consultar
+            todo el período).
+    """
+    try:
         for field_name, val in [("nif", nif), ("name", name), ("invoice_date", invoice_date)]:
             if not val:
                 return err(f"{field_name} is required", "MISSING_PARAM")
@@ -1221,16 +1088,26 @@ async def handle_es_query_verifactu_status(
         return err(str(exc))
 
 
-async def handle_es_generate_qr_verifactu(
-    arguments: dict[str, Any],
-) -> list[types.TextContent]:
-    try:
-        nif = arguments.get("nif", "")
-        invoice_number = arguments.get("invoice_number", "")
-        invoice_date = arguments.get("invoice_date", "")
-        total_amount = arguments.get("total_amount")
-        size_px = int(arguments.get("size_px", 200))
+async def es__generate_qr_verifactu(
+    nif: str,
+    invoice_number: str,
+    invoice_date: str,
+    total_amount: float,
+    size_px: int = 200,
+) -> dict[str, Any]:
+    """Genera el código QR obligatorio VERI*FACTU (HAC/1177/2024 Art. 10) como PNG en base64.
 
+    Encodes la URL de verificación de la AEAT:
+    https://www2.agenciatributaria.gob.es/wlpl/TIKE-CONT/ValidarQR?...
+
+    Args:
+        nif: NIF del emisor.
+        invoice_number: NumSerieFactura.
+        invoice_date: FechaExpedicionFactura en YYYY-MM-DD.
+        total_amount: ImporteTotal de la factura (con IVA incluido).
+        size_px: Tamaño del QR en píxeles (por defecto: 200).
+    """
+    try:
         for name, value in [
             ("nif", nif),
             ("invoice_number", invoice_number),
@@ -1299,15 +1176,34 @@ async def handle_es_generate_qr_verifactu(
         return err(str(exc))
 
 
-async def handle_es_cancel_verifactu_record(
-    arguments: dict[str, Any],
-) -> list[types.TextContent]:
+async def es__cancel_verifactu_record(
+    original_invoice_number: str,
+    original_invoice_date: str,
+    issuer_nif: str,
+    issuer_name: str,
+    previous_hash: str,
+    previous_emisor_nif: str | None = None,
+    previous_num_serie: str | None = None,
+    previous_fecha: str | None = None,
+) -> dict[str, Any]:
+    """Genera un registro de anulacion VERI*FACTU (TipoHuella=01).
+
+    Encadenado a la secuencia de huellas actual.
+
+    Args:
+        original_invoice_number: NumSerieFactura a anular.
+        original_invoice_date: FechaExpedicionFactura original (YYYY-MM-DD).
+        issuer_nif: NIF del emisor.
+        issuer_name: Nombre/razon social del emisor.
+        previous_hash: Huella del ultimo registro en la cadena.
+        previous_emisor_nif: NIF del emisor del registro anterior (IDEmisorFactura
+            en EncadenamientoFacturaAnteriorType).
+        previous_num_serie: NumSerieFactura del registro anterior.
+        previous_fecha: FechaExpedicionFactura del registro anterior en DD-MM-YYYY.
+    """
     try:
-        num_serie = arguments.get("original_invoice_number", "")
-        fecha_iso = arguments.get("original_invoice_date", "")
-        issuer_nif = arguments.get("issuer_nif", "")
-        issuer_name = arguments.get("issuer_name", "")
-        previous_hash = arguments.get("previous_hash", "")
+        num_serie = original_invoice_number
+        fecha_iso = original_invoice_date
 
         for name, val in [
             ("original_invoice_number", num_serie),
@@ -1325,10 +1221,6 @@ async def handle_es_cancel_verifactu_record(
         if len(fecha_hora_gen) > 19 and ":" not in fecha_hora_gen[-6:]:
             fecha_hora_gen = fecha_hora_gen[:-2] + ":" + fecha_hora_gen[-2:]
 
-        previous_emisor_nif: str | None = arguments.get("previous_emisor_nif") or None
-        previous_num_serie_arg: str | None = arguments.get("previous_num_serie") or None
-        previous_fecha_arg: str | None = arguments.get("previous_fecha") or None
-
         # Build RegistroAnulacion
         ra = _el("RegistroAnulacion")
         _sub(ra, "IDVersion", _VERIFACTU_VERSION)
@@ -1340,8 +1232,8 @@ async def handle_es_cancel_verifactu_record(
         _sub(enc, "PrimerRegistro", "N")
         reg_ant = _sub(enc, "RegistroAnterior")
         _sub(reg_ant, "IDEmisorFactura", previous_emisor_nif or issuer_nif)
-        _sub(reg_ant, "NumSerieFactura", previous_num_serie_arg or num_serie)
-        _sub(reg_ant, "FechaExpedicionFactura", previous_fecha_arg or fecha_es)
+        _sub(reg_ant, "NumSerieFactura", previous_num_serie or num_serie)
+        _sub(reg_ant, "FechaExpedicionFactura", previous_fecha or fecha_es)
         _sub(reg_ant, "Huella", previous_hash)
 
         # SistemaInformatico — IdSistemaInformatico is TextMax2Type (max 2 chars)

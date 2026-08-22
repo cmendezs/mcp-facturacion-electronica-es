@@ -58,12 +58,13 @@ _PRIMARY_INVOICE_CLASS: tuple[str, str] | None = (
 
 _INTENTIONAL_OVERRIDES: dict[str, set[str]] = {
     "mcp_einvoicing_core.base_server": {
-        # OVERRIDE-REASON: ES uses standalone FastMCP, not EInvoicingMCPServer or its ABC hierarchy
+        # OVERRIDE-REASON: ARCH-CONVERGE-ES (this package) uses EInvoicingMCPServer
+        # directly (see server.py) but implements tool functions directly rather
+        # than subclassing the ABC base classes below.
         "BaseDocumentGenerator",
         "BaseDocumentParser",
         "BaseDocumentValidator",
         "BasePartyValidator",
-        "EInvoicingMCPServer",
         "BaseLifecycleManager",
         "SubmitResult",
         "DocumentValidationResult",
@@ -77,6 +78,8 @@ _INTENTIONAL_OVERRIDES: dict[str, set[str]] = {
         "Field",
         "Generic",
         "TypeVar",
+        # OVERRIDE-REASON: EInvoicingMCPServer wraps FastMCP internally; ES imports
+        # EInvoicingMCPServer, not FastMCP, directly
         "FastMCP",
         "InvoiceParty",
     },
@@ -102,6 +105,10 @@ _INTENTIONAL_OVERRIDES: dict[str, set[str]] = {
     "mcp_einvoicing_core.pdf": {
         # OVERRIDE-REASON: PDF/A-3 embedding not required for Facturae 3.2.2 or VeriFactu
         "PDFEmbedder",
+        # OVERRIDE-REASON: stdlib typing re-export, surfaced by the core 1.16.2 -> 1.19.0
+        # version installed in this venv; same pre-existing class of warning closed by
+        # ARCH-CONVERGE-BE/PL/DE, unrelated to this package's own code
+        "Union",
     },
     "mcp_einvoicing_core.download_rules": {
         # OVERRIDE-REASON: ES populates specs/ manually, no artefact-download framework
@@ -168,12 +175,17 @@ _INTENTIONAL_OVERRIDES: dict[str, set[str]] = {
         "timezone",
     },
     "mcp_einvoicing_core.peppol": {
-        # OVERRIDE-REASON: ES does not use Peppol — Spanish e-invoicing is SII/VeriFactu/FACe
+        # OVERRIDE-REASON: ES does not use Peppol — Spanish e-invoicing is SII/VeriFactu/FACe.
+        # ARCH-CONVERGE-ES (server.py -> EInvoicingMCPServer) deliberately does not mount
+        # mcp_einvoicing_core.peppol.tools.register_peppol_tools, unlike BE/PL/DE.
         "PeppolEnvironment",
         "PeppolLookupResult",
         "PeppolParticipantId",
         "PeppolSMPClient",
         "PeppolServiceInfo",
+        # OVERRIDE-REASON: standalone U-NAPTR diagnostic (core v1.19.0), promoted out of
+        # PeppolSMPClient._resolve_smp_hostname; only relevant to Peppol network tooling
+        "resolve_naptr",
         "Enum",
         "PlatformError",
         "dataclass",
@@ -286,38 +298,40 @@ _REQUIRED_TOOL_CATEGORIES: dict[str, str] = {
     "es__parse_aeat_response": "Analizar y normalizar respuesta XML AEAT a JSON estructurado",
 }
 
+# Each tool is now a typed FastMCP function named identically to its MCP tool
+# name (ARCH-CONVERGE-ES), e.g. `es__generate_verifactu_record`, mounted via
+# server.py's _register_es_tools(). No more TOOL_ES_* Tool-schema objects.
 _TOOL_MODULE_ATTRS: list[tuple[str, str]] = [
-    ("mcp_facturacion_electronica_es.tools.verifactu", "TOOL_ES_GENERATE_VERIFACTU_RECORD"),
-    ("mcp_facturacion_electronica_es.tools.verifactu", "TOOL_ES_VALIDATE_VERIFACTU_RECORD"),
-    ("mcp_facturacion_electronica_es.tools.verifactu", "TOOL_ES_SUBMIT_VERIFACTU_TO_AEAT"),
-    ("mcp_facturacion_electronica_es.tools.verifactu", "TOOL_ES_GENERATE_QR_VERIFACTU"),
-    ("mcp_facturacion_electronica_es.tools.verifactu", "TOOL_ES_CANCEL_VERIFACTU_RECORD"),
-    ("mcp_facturacion_electronica_es.tools.facturae", "TOOL_ES_GENERATE_FACTURAE_XML"),
-    ("mcp_facturacion_electronica_es.tools.facturae", "TOOL_ES_SIGN_FACTURAE_XADES"),
-    ("mcp_facturacion_electronica_es.tools.facturae", "TOOL_ES_SUBMIT_TO_FACE"),
-    ("mcp_facturacion_electronica_es.tools.facturae", "TOOL_ES_GET_FACE_INVOICE_STATUS"),
-    ("mcp_facturacion_electronica_es.tools.facturae", "TOOL_ES_VALIDATE_FACTURAE_SCHEMA"),
-    ("mcp_facturacion_electronica_es.tools.sii", "TOOL_ES_BUILD_SII_INVOICE_RECORD"),
-    ("mcp_facturacion_electronica_es.tools.sii", "TOOL_ES_SUBMIT_SII_BATCH"),
-    ("mcp_facturacion_electronica_es.tools.sii", "TOOL_ES_QUERY_SII_STATUS"),
-    ("mcp_facturacion_electronica_es.tools.sii", "TOOL_ES_GENERATE_SII_CORRECTION"),
+    ("mcp_facturacion_electronica_es.tools.verifactu", "es__generate_verifactu_record"),
+    ("mcp_facturacion_electronica_es.tools.verifactu", "es__validate_verifactu_record"),
+    ("mcp_facturacion_electronica_es.tools.verifactu", "es__submit_verifactu_to_aeat"),
+    ("mcp_facturacion_electronica_es.tools.verifactu", "es__query_verifactu_status"),
+    ("mcp_facturacion_electronica_es.tools.verifactu", "es__generate_qr_verifactu"),
+    ("mcp_facturacion_electronica_es.tools.verifactu", "es__cancel_verifactu_record"),
+    ("mcp_facturacion_electronica_es.tools.facturae", "es__generate_facturae_xml"),
+    ("mcp_facturacion_electronica_es.tools.facturae", "es__sign_facturae_xades"),
+    ("mcp_facturacion_electronica_es.tools.facturae", "es__submit_to_face"),
+    ("mcp_facturacion_electronica_es.tools.facturae", "es__get_face_invoice_status"),
+    ("mcp_facturacion_electronica_es.tools.facturae", "es__validate_facturae_schema"),
+    ("mcp_facturacion_electronica_es.tools.sii", "es__build_sii_invoice_record"),
+    ("mcp_facturacion_electronica_es.tools.sii", "es__submit_sii_batch"),
+    ("mcp_facturacion_electronica_es.tools.sii", "es__query_sii_status"),
+    ("mcp_facturacion_electronica_es.tools.sii", "es__generate_sii_correction"),
     # TicketBAI tools removed — out of scope (confirmed 2026-05-31)
-    ("mcp_facturacion_electronica_es.tools.b2b", "TOOL_ES_GENERATE_B2B_EINVOICE_ES"),
-    ("mcp_facturacion_electronica_es.tools.b2b", "TOOL_ES_CHECK_B2B_MANDATE_APPLICABILITY"),
-    ("mcp_facturacion_electronica_es.tools.utils", "TOOL_ES_DETECT_REGIONAL_REGIME"),
-    ("mcp_facturacion_electronica_es.tools.utils", "TOOL_ES_GET_COMPLIANCE_STATUS"),
-    ("mcp_facturacion_electronica_es.tools.utils", "TOOL_ES_PARSE_AEAT_RESPONSE"),
+    ("mcp_facturacion_electronica_es.tools.b2b", "es__generate_b2b_einvoice_es"),
+    ("mcp_facturacion_electronica_es.tools.b2b", "es__check_b2b_mandate_applicability"),
+    ("mcp_facturacion_electronica_es.tools.utils", "es__detect_regional_regime"),
+    ("mcp_facturacion_electronica_es.tools.utils", "es__get_compliance_status"),
+    ("mcp_facturacion_electronica_es.tools.utils", "es__parse_aeat_response"),
 ]
 
 
 def _collect_registered_tools() -> set[str]:
     registered: set[str] = set()
-    for mod_path, attr in _TOOL_MODULE_ATTRS:
+    for mod_path, fn_name in _TOOL_MODULE_ATTRS:
         mod, _ = _try_import(mod_path)
-        if mod and hasattr(mod, attr):
-            tool_obj = getattr(mod, attr)
-            if hasattr(tool_obj, "name"):
-                registered.add(tool_obj.name)
+        if mod and hasattr(mod, fn_name):
+            registered.add(fn_name)
     return registered
 
 
@@ -340,7 +354,8 @@ def run_check_2() -> CheckResult:
                     if tool_name in registered
                     else (
                         f"Required tool '{tool_name}' ({description}) is not registered "
-                        "in the MCP server. Add it to server.py _ALL_TOOLS and _TOOL_HANDLERS."
+                        "in the MCP server. Add it via mcp.tool() in server.py's "
+                        "_register_es_tools()."
                     )
                 ),
             )
@@ -457,7 +472,7 @@ def run_check_5() -> CheckResult:
     """CHECK 5 — ES-specific structural and completeness checks."""
     result = CheckResult(check_id="CHECK_5", name="ES-specific structural checks")
 
-    # 5a: server module exports _ALL_TOOLS, _TOOL_HANDLERS, and main
+    # 5a: server.py imports cleanly and exposes mcp + main (ARCH-CONVERGE-ES)
     server_mod, err = _try_import("mcp_facturacion_electronica_es.server")
     if server_mod is None:
         result.findings.append(
@@ -470,7 +485,7 @@ def run_check_5() -> CheckResult:
             )
         )
     else:
-        for attr in ("_ALL_TOOLS", "_TOOL_HANDLERS", "main"):
+        for attr in ("mcp", "main"):
             tag = "[OK]" if hasattr(server_mod, attr) else "[MISSING]"
             sev = SEVERITY_OK if hasattr(server_mod, attr) else SEVERITY_BLOCKING
             result.findings.append(
@@ -487,44 +502,33 @@ def run_check_5() -> CheckResult:
                 )
             )
 
-        # 5b: _ALL_TOOLS and _TOOL_HANDLERS in sync
-        all_tools = getattr(server_mod, "_ALL_TOOLS", [])
-        all_handlers = getattr(server_mod, "_TOOL_HANDLERS", {})
-        tool_names_list = {t.name for t in all_tools}
-        tool_names_handlers = set(all_handlers.keys())
-
-        for name in sorted(tool_names_list - tool_names_handlers):
-            result.findings.append(
-                CheckFinding(
-                    check_id="CHECK_5",
-                    tag="[MISSING_HANDLER]",
-                    severity=SEVERITY_BLOCKING,
-                    symbol=f"_TOOL_HANDLERS[{name!r}]",
-                    message=f"Tool '{name}' is in _ALL_TOOLS but has no handler in _TOOL_HANDLERS.",
+        # 5b: mcp must be an EInvoicingMCPServer instance
+        mcp_obj = getattr(server_mod, "mcp", None)
+        core_mod, _ = _try_import("mcp_einvoicing_core")
+        server_cls = getattr(core_mod, "EInvoicingMCPServer", None) if core_mod else None
+        if mcp_obj is not None and server_cls is not None:
+            if isinstance(mcp_obj, server_cls):
+                result.findings.append(
+                    CheckFinding(
+                        check_id="CHECK_5",
+                        tag="[OK]",
+                        severity=SEVERITY_OK,
+                        symbol="server.mcp",
+                        message="server.mcp is an EInvoicingMCPServer instance.",
+                    )
                 )
-            )
-        for name in sorted(tool_names_handlers - tool_names_list):
-            result.findings.append(
-                CheckFinding(
-                    check_id="CHECK_5",
-                    tag="[MISSING_REGISTRATION]",
-                    severity=SEVERITY_WARNING,
-                    symbol=f"_ALL_TOOLS[{name!r}]",
-                    message=f"Handler '{name}' is in _TOOL_HANDLERS but not listed in _ALL_TOOLS.",
+            else:
+                result.findings.append(
+                    CheckFinding(
+                        check_id="CHECK_5",
+                        tag="[WRONG_TYPE]",
+                        severity=SEVERITY_WARNING,
+                        symbol="server.mcp",
+                        message=(
+                            f"server.mcp is {type(mcp_obj).__name__}, expected EInvoicingMCPServer."
+                        ),
+                    )
                 )
-            )
-        if not (tool_names_list - tool_names_handlers) and not (
-            tool_names_handlers - tool_names_list
-        ):
-            result.findings.append(
-                CheckFinding(
-                    check_id="CHECK_5",
-                    tag="[OK]",
-                    severity=SEVERITY_OK,
-                    symbol="_ALL_TOOLS ↔ _TOOL_HANDLERS",
-                    message=f"All {len(all_tools)} tools have matching handlers.",
-                )
-            )
 
     # 5c: SpanishRegime enum covers required AEAT-scope values
     # TicketBAI and NaTicket are intentionally absent — out of scope (confirmed 2026-05-31)
