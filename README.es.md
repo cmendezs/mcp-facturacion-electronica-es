@@ -398,11 +398,16 @@ Consulta el estado de un lote SII enviado mediante `ConsultaFactInformadasEmitid
 
 | Parametro | Tipo | Obligatorio | Descripcion |
 |---|---|---|---|
-| `batch_id` | `string` | Si | Referencia del lote devuelta por `es__submit_sii_batch` |
-| `record_type` | `string` | Si | `"issued"` o `"received"` |
+| `nif_titular` | `string` | Si | NIF del titular SII (obligado tributario) |
+| `nombre_titular` | `string` | Si | Nombre o razon social del titular |
+| `fiscal_year` | `integer` | Si | Ejercicio fiscal (YYYY) |
+| `period` | `string` | Si | Periodo de liquidacion: `"01"`..`"12"` para mensual, o `"0A"` para anual |
+| `record_type` | `string` | No | `"issued"` o `"received"` (por defecto: `"issued"`) |
+| `invoice_number` | `string` | No | `NumSerieFacturaEmisor` para filtrar por una factura concreta |
+| `emisor_nif` | `string` | No | NIF del emisor para filtrar (solo aplica a `"received"`) |
 
 ```json
-{ "tool": "es__query_sii_status", "arguments": { "batch_id": "SII-BATCH-20250315-001", "record_type": "issued" } }
+{ "tool": "es__query_sii_status", "arguments": { "nif_titular": "B12345674", "nombre_titular": "Ejemplo SL", "fiscal_year": 2025, "period": "03", "record_type": "issued" } }
 ```
 
 > ⚠️ Pendiente de confirmacion regulatoria

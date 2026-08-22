@@ -388,11 +388,16 @@ Queries the status of a submitted SII batch via `ConsultaFactInformadasEmitidas`
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
-| `batch_id` | `string` | Yes | Batch reference returned by `es__submit_sii_batch` |
-| `record_type` | `string` | Yes | `"issued"` or `"received"` |
+| `nif_titular` | `string` | Yes | NIF of the SII titular (obligado tributario) |
+| `nombre_titular` | `string` | Yes | Name or company name of the titular |
+| `fiscal_year` | `integer` | Yes | Fiscal year (YYYY) |
+| `period` | `string` | Yes | Settlement period: `"01"`..`"12"` for monthly, or `"0A"` for annual |
+| `record_type` | `string` | No | `"issued"` or `"received"` (default: `"issued"`) |
+| `invoice_number` | `string` | No | `NumSerieFacturaEmisor` to filter by a specific invoice |
+| `emisor_nif` | `string` | No | Issuer NIF to filter by (only applies to `"received"`) |
 
 ```json
-{ "tool": "es__query_sii_status", "arguments": { "batch_id": "SII-BATCH-20250315-001", "record_type": "issued" } }
+{ "tool": "es__query_sii_status", "arguments": { "nif_titular": "B12345674", "nombre_titular": "Ejemplo SL", "fiscal_year": 2025, "period": "03", "record_type": "issued" } }
 ```
 
 > ⚠️ Pending regulatory confirmation
