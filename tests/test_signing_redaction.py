@@ -69,9 +69,7 @@ async def test_handle_sign_facturae_xades_uses_settings_password(
 
     monkeypatch.setattr(confirmation_module, "_HITL_DISABLED", True)
     monkeypatch.setattr(aeat_settings, "certificate_password", "from-settings-only")
-    monkeypatch.setattr(
-        facturae_module.SignerClient, "is_configured", staticmethod(lambda: False)
-    )
+    monkeypatch.setattr(facturae_module.SignerClient, "is_configured", staticmethod(lambda: False))
 
     captured_configs: list = []
 

@@ -34,9 +34,7 @@ def _generate_test_p12(path: Path, password: bytes | None = b"test") -> None:
         .public_key(key.public_key())
         .serial_number(x509.random_serial_number())
         .not_valid_before(datetime.datetime.now(datetime.UTC))
-        .not_valid_after(
-            datetime.datetime.now(datetime.UTC) + datetime.timedelta(days=365)
-        )
+        .not_valid_after(datetime.datetime.now(datetime.UTC) + datetime.timedelta(days=365))
         .sign(key, hashes.SHA256())
     )
     p12_bytes = pkcs12.serialize_key_and_certificates(

@@ -637,9 +637,7 @@ async def test_qr_url_uses_sandbox_base_by_default() -> None:
         invoice_date="2025-03-15",
         total_amount=1210.00,
     )
-    assert data["verification_url"].startswith(
-        "https://prewww2.aeat.es/wlpl/TIKE-CONT/ValidarQR?"
-    )
+    assert data["verification_url"].startswith("https://prewww2.aeat.es/wlpl/TIKE-CONT/ValidarQR?")
     assert data["environment"] == "sandbox"
     assert "mandatory_legends" in data
     assert len(data["mandatory_legends"]) == 2
@@ -822,9 +820,7 @@ async def test_handle_query_verifactu_status_masks_response(
 ) -> None:
     from mcp_facturacion_electronica_es.tools import verifactu as verifactu_module
 
-    monkeypatch.setattr(
-        verifactu_module.SignerClient, "is_configured", staticmethod(lambda: False)
-    )
+    monkeypatch.setattr(verifactu_module.SignerClient, "is_configured", staticmethod(lambda: False))
     from mcp_facturacion_electronica_es.config import aeat_settings
 
     monkeypatch.setattr(aeat_settings, "certificate_path", "/fake/cert.p12")
@@ -841,9 +837,7 @@ async def test_handle_query_verifactu_status_masks_response(
         async def _request(self, *args, **kwargs):
             return _FakeResponse()
 
-    monkeypatch.setattr(
-        "mcp_einvoicing_core.http_client.BaseEInvoicingClient", _FakeClient
-    )
+    monkeypatch.setattr("mcp_einvoicing_core.http_client.BaseEInvoicingClient", _FakeClient)
 
     data = await verifactu_module.es__query_verifactu_status(
         nif="B12345678",

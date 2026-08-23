@@ -225,9 +225,7 @@ def test_facturae_tax_type_default_iva(minimal_invoice) -> None:
 def test_facturae_recargo_equivalencia(minimal_invoice) -> None:
     from decimal import Decimal as D
 
-    xml_bytes = build_facturae_xml(
-        minimal_invoice, recargo_equivalencia_rate=D("5.2")
-    )
+    xml_bytes = build_facturae_xml(minimal_invoice, recargo_equivalencia_rate=D("5.2"))
     root = etree.fromstring(xml_bytes)
     ns = {"fe": _FACTURAE_NS}
     rate = root.find(".//fe:EquivalenceSurcharge", ns)
@@ -243,9 +241,7 @@ def test_facturae_recargo_equivalencia(minimal_invoice) -> None:
 def test_facturae_irpf_rate_taxes_withheld_block(minimal_invoice) -> None:
     from decimal import Decimal as D
 
-    xml_bytes = build_facturae_xml(
-        minimal_invoice, irpf_amount=D("150.00"), irpf_rate=D("15.00")
-    )
+    xml_bytes = build_facturae_xml(minimal_invoice, irpf_amount=D("150.00"), irpf_rate=D("15.00"))
     root = etree.fromstring(xml_bytes)
     ns = {"fe": _FACTURAE_NS}
     withheld = root.find(".//fe:TaxesWithheld/fe:Tax", ns)

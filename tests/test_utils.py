@@ -241,7 +241,7 @@ def test_face_base_urls_verified() -> None:
 
 
 def test_sii_endpoints_match_bundled_wsdl() -> None:
-    """"sello" (www10/prewww10) is the company-seal-certificate variant of the
+    """ "sello" (www10/prewww10) is the company-seal-certificate variant of the
     same operation per the bundled WSDL's own port names
     (SuministroFactEmitidasSello / SuministroFactRecibidasSello) — not a
     primary/secondary failover pair. Renamed from "secondary" after the same
