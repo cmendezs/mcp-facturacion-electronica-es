@@ -298,6 +298,55 @@ _REQUIRED_TOOL_CATEGORIES: dict[str, str] = {
     "es__parse_aeat_response": "Analizar y normalizar respuesta XML AEAT a JSON estructurado",
 }
 
+# ES-local tool-category registry (ES-AUD-3). The comment groupings inside
+# _REQUIRED_TOOL_CATEGORIES above are formalised here as data so CHECK 5g can
+# machine-verify that every required tool is assigned exactly one category and
+# that no category drifts from the required-tool set. This is kept ES-local
+# deliberately: only ES needs tool categorisation, so it does not meet the
+# core-promotion bar (no CORE-CATEG-1 core gap). If a second package ever needs
+# the same taxonomy, escalate it as a core gap then.
+_TOOL_CATEGORIES: dict[str, frozenset[str]] = {
+    "VERI*FACTU": frozenset(
+        {
+            "es__generate_verifactu_record",
+            "es__validate_verifactu_record",
+            "es__submit_verifactu_to_aeat",
+            "es__generate_qr_verifactu",
+            "es__cancel_verifactu_record",
+        }
+    ),
+    "Facturae/FACe": frozenset(
+        {
+            "es__generate_facturae_xml",
+            "es__sign_facturae_xades",
+            "es__submit_to_face",
+            "es__get_face_invoice_status",
+            "es__validate_facturae_schema",
+        }
+    ),
+    "SII": frozenset(
+        {
+            "es__build_sii_invoice_record",
+            "es__submit_sii_batch",
+            "es__query_sii_status",
+            "es__generate_sii_correction",
+        }
+    ),
+    "Crea y Crece/B2B": frozenset(
+        {
+            "es__generate_b2b_einvoice_es",
+            "es__check_b2b_mandate_applicability",
+        }
+    ),
+    "Utilities": frozenset(
+        {
+            "es__detect_regional_regime",
+            "es__get_compliance_status",
+            "es__parse_aeat_response",
+        }
+    ),
+}
+
 # Each tool is now a typed FastMCP function named identically to its MCP tool
 # name (ARCH-CONVERGE-ES), e.g. `es__generate_verifactu_record`, mounted via
 # server.py's _register_es_tools(). No more TOOL_ES_* Tool-schema objects.
@@ -658,6 +707,80 @@ def run_check_5() -> CheckResult:
                     "specs/ directory not found. Drop official XSD files "
                     "(HAC/1177/2024, Facturae 3.2.2, SII schemas) into specs/ "
                     "to enable schema-based validation."
+                ),
+            )
+        )
+
+    # 5g: tool-category coverage (ES-AUD-3). Every required tool must belong to
+    # exactly one category in the ES-local _TOOL_CATEGORIES registry, and no
+    # category may list a tool outside the required set or be empty.
+    required_tools = set(_REQUIRED_TOOL_CATEGORIES)
+    categorized_tools: set[str] = set()
+    duplicated: set[str] = set()
+    for tools in _TOOL_CATEGORIES.values():
+        duplicated |= categorized_tools & tools
+        categorized_tools |= tools
+
+    uncategorized = required_tools - categorized_tools
+    unknown = categorized_tools - required_tools
+    empty_categories = [name for name, tools in _TOOL_CATEGORIES.items() if not tools]
+
+    for tool_name in sorted(uncategorized):
+        result.findings.append(
+            CheckFinding(
+                check_id="CHECK_5",
+                tag="[UNCATEGORIZED_TOOL]",
+                severity=SEVERITY_BLOCKING,
+                symbol=tool_name,
+                message=(
+                    f"Required tool '{tool_name}' is not assigned to any category in "
+                    "_TOOL_CATEGORIES. Add it to the matching category."
+                ),
+            )
+        )
+    for tool_name in sorted(unknown):
+        result.findings.append(
+            CheckFinding(
+                check_id="CHECK_5",
+                tag="[UNKNOWN_CATEGORY_TOOL]",
+                severity=SEVERITY_BLOCKING,
+                symbol=tool_name,
+                message=(
+                    f"_TOOL_CATEGORIES lists '{tool_name}', which is not a required tool "
+                    "in _REQUIRED_TOOL_CATEGORIES. Remove it or add it to the required set."
+                ),
+            )
+        )
+    for tool_name in sorted(duplicated):
+        result.findings.append(
+            CheckFinding(
+                check_id="CHECK_5",
+                tag="[MULTI_CATEGORY_TOOL]",
+                severity=SEVERITY_WARNING,
+                symbol=tool_name,
+                message=f"Tool '{tool_name}' appears in more than one category.",
+            )
+        )
+    for name in empty_categories:
+        result.findings.append(
+            CheckFinding(
+                check_id="CHECK_5",
+                tag="[EMPTY_CATEGORY]",
+                severity=SEVERITY_WARNING,
+                symbol=name,
+                message=f"Tool category '{name}' has no tools assigned.",
+            )
+        )
+    if not (uncategorized or unknown or duplicated or empty_categories):
+        result.findings.append(
+            CheckFinding(
+                check_id="CHECK_5",
+                tag="[OK]",
+                severity=SEVERITY_OK,
+                symbol="_TOOL_CATEGORIES",
+                message=(
+                    f"All {len(required_tools)} required tools map to exactly one of "
+                    f"{len(_TOOL_CATEGORIES)} categories."
                 ),
             )
         )
