@@ -16,9 +16,11 @@
 en facturación electrónica española. Proporciona herramientas para generar, validar y enviar
 facturas electrónicas bajo los seis sistemas coexistentes en España: VERI\*FACTU, Facturae/FACe,
 SII, TicketBAI (País Vasco), NaTicket (Navarra) y las obligaciones B2B de la Ley 18/2022
-"Crea y Crece". El servidor está construido sobre `mcp-einvoicing-core`, la librería base
-compartida con `mcp-facture-electronique-fr` (Francia, XP Z12-013) y `mcp-einvoicing-be`
-(Bélgica, Peppol BIS 3.0).
+"Crea y Crece". El servidor está construido sobre [**mcp-einvoicing-core**](https://github.com/cmendezs/mcp-einvoicing-core),
+la librería base compartida con `mcp-facture-electronique-fr` (Francia, XP Z12-013) y
+`mcp-einvoicing-be` (Bélgica, Peppol BIS 3.0), que proporciona modelos comunes, abstracciones
+de validación, utilidades XML y la jerarquía de excepciones. `mcp-einvoicing-core` se instala
+automáticamente como dependencia transitiva, no se requiere ningún paso adicional.
 
 España opera uno de los ecosistemas de facturación electrónica más complejos de Europa,
 con seis sistemas superpuestos que se aplican en función del tamaño del contribuyente, el
@@ -30,56 +32,138 @@ opera TicketBAI y Navarra opera NaTicket, ambos independientes del marco naciona
 La facturación B2G mediante Facturae XML en el portal FACe es obligatoria desde 2015
 (Ley 25/2013).
 
----
+## Instalación
 
-## Construido sobre
+### Desde PyPI (recomendado)
 
-Este paquete se basa en [**mcp-einvoicing-core**](https://github.com/cmendezs/mcp-einvoicing-core),
-la librería base compartida por todos los servidores MCP del ecosistema `mcp-einvoicing`. Proporciona
-modelos comunes, abstracciones de validación, utilidades XML y la jerarquía de excepciones.
+```bash
+pip install mcp-facturacion-electronica-es
+```
 
-`mcp-einvoicing-core` se instala automáticamente como dependencia transitiva, no se requiere
-ningún paso adicional.
+Sin instalación previa, con `uvx`:
 
----
+```bash
+uvx mcp-facturacion-electronica-es
+```
 
-## Descripción general
+### Desde las fuentes
 
-El ecosistema español de facturación electrónica cuenta con **seis sistemas coexistentes** con
-ámbitos, formatos y calendarios distintos. VERI\*FACTU introduce registros de factura
-inviolables encadenados que se envían en tiempo real a la AEAT (Agencia Estatal de
-Administración Tributaria), aplicable a la mayoría de empresas a partir de 2027 (RD-ley 15/2025).
-El SII ya es obligatorio para grandes contribuyentes bajo una ventana de comunicación de
-4 días. Facturae XML con firma XAdES-EPES cubre toda la facturación B2G a través del portal
-FACe. El País Vasco aplica TicketBAI de forma independiente, con tres autoridades provinciales
-que mantienen cada una sus propios esquemas XSD y endpoints. Navarra opera NaTicket. La Ley
-Crea y Crece exige la facturación electrónica B2B para todas las empresas; el RD 238/2026
-(BOE-A-2026-7295) confirma los formatos admitidos (EN 16931: CII/UBL/EDIFACT/Facturae),
-mientras que la Orden Ministerial que desarrolla el paquete técnico de la solución pública
-sigue pendiente. La detección del régimen a partir del domicilio
-fiscal y el volumen de operaciones es un requisito previo a todas las demás operaciones:
-utilice `es__detect_regional_regime` en primer lugar.
+```bash
+git clone https://github.com/cmendezs/mcp-facturacion-electronica-es.git
+cd mcp-facturacion-electronica-es
+uv sync --all-extras
+```
 
----
+## Configuración
 
-## Cobertura regulatoria
+Toda la configuracion se realiza mediante variables de entorno o un archivo `.env`.
 
-| Sistema | Ámbito | Formato | Obligatorio desde | Estado |
-|---|---|---|---|---|
-| **VERI\*FACTU** | Todas las empresas no-SII | XML propietario (XSD v1.0 HAC/1177/2024) | IS: ene 2027 / Otros: jul 2027 (RD-ley 15/2025) | Implementado (pendiente de confirmacion regulatoria) |
-| **Facturae / FACe** | B2G (sector público) | Facturae 3.2.2 + XAdES-EPES | Obligatorio desde 2015 (Ley 25/2013) | Implementado (pendiente de confirmacion regulatoria) |
-| **SII** | Facturación >6M EUR, grupos IVA, REDEME | XML SOAP/REST AEAT | Ya obligatorio (RD 596/2016) | Implementado (pendiente de confirmacion regulatoria) |
-| **TicketBAI** | Araba, Gipuzkoa, Bizkaia | XML provincial + XAdES + QR | Según provincia, 2022-2023 | Eliminado del alcance (v0.2.0) |
-| **Crea y Crece (B2B)** | Todas las empresas (12/24 meses tras la OM, según facturación) | UBL 2.1 o Facturae 3.2.2 (EN 16931); CII/EDIFACT también admitidos, no implementados | RD 238/2026 publicado; Orden Ministerial (solución pública) pendiente | Implementado (formatos confirmados por RD 238/2026; solución pública pendiente de la OM) |
-| **NaTicket** | Navarra | XML foral + firma | Mandato foral (implantacion escalonada) | Parcial (via `es__detect_regional_regime`) |
+### AEAT / VERI\*FACTU / SII
 
-> **Exclusion mutua SII / VERI\*FACTU (Real Decreto 254/2025):** Los contribuyentes
-> inscritos en el SII quedan exentos de VERI\*FACTU. Utilice `es__check_b2b_mandate_applicability`
-> antes de generar cualquier registro.
+| Variable | Descripcion | Obligatorio |
+|---|---|---|
+| `AEAT_ENV` | `sandbox` o `production` | Si |
+| `AEAT_CERTIFICATE_PATH` | Ruta al certificado PKCS#12 FNMT-RCM | Para el envio |
+| `AEAT_CERTIFICATE_PASSWORD` | Contrasena del certificado | Para el envio |
+| `AEAT_NIF` | NIF del contribuyente | Para el envio |
 
----
+### FACe
 
-## Herramientas
+| Variable | Descripcion | Obligatorio |
+|---|---|---|
+| `FACE_ENV` | `sandbox` o `production` | Si |
+
+FACe se autentica mediante JWS usando el mismo certificado `AEAT_CERTIFICATE_PATH` /
+`AEAT_CERTIFICATE_PASSWORD` que VERI\*FACTU/SII (ver la seccion AEAT anterior); no se
+requieren credenciales FACe independientes.
+
+### TicketBAI
+
+| Variable | Descripcion | Obligatorio |
+|---|---|---|
+| `TICKETBAI_ENV` | `sandbox` o `production` | Si |
+| `TICKETBAI_CERTIFICATE_PATH` | Ruta del certificado de firma provincial | Si |
+| `TICKETBAI_CERTIFICATE_PASSWORD` | Contrasena del certificado | Si |
+
+### Comunes (heredadas de `mcp-einvoicing-core`)
+
+| Variable | Descripcion | Por defecto |
+|---|---|---|
+| `LOG_LEVEL` | `DEBUG`, `INFO`, `WARNING`, `ERROR` | `INFO` |
+
+## Integración con Claude Desktop
+
+Para usar este servidor con Claude, añada esta configuración a su archivo `claude_desktop_config.json`:
+
+```json
+{
+  "mcpServers": {
+    "facturacion-es": {
+      "command": "uvx",
+      "args": ["mcp-facturacion-electronica-es"],
+      "env": {
+        "AEAT_ENV": "sandbox",
+        "AEAT_CERTIFICATE_PATH": "/ruta/al/cert.p12",
+        "AEAT_CERTIFICATE_PASSWORD": "contrasena-del-certificado"
+      }
+    }
+  }
+}
+```
+
+## Integración con Cursor
+
+Cursor admite servidores MCP via stdio. Añada la configuración en:
+- **Global** (todos los proyectos): `~/.cursor/mcp.json`
+- **Proyecto** (solo este repositorio): `.cursor/mcp.json`
+
+```json
+{
+  "mcpServers": {
+    "facturacion-es": {
+      "command": "uvx",
+      "args": ["mcp-facturacion-electronica-es"],
+      "env": {
+        "AEAT_ENV": "sandbox",
+        "AEAT_CERTIFICATE_PATH": "/ruta/al/cert.p12",
+        "AEAT_CERTIFICATE_PASSWORD": "contrasena-del-certificado"
+      }
+    }
+  }
+}
+```
+
+Recargue la ventana de Cursor (`Ctrl+Shift+P` y luego *Reload Window*) para aplicar los cambios.
+
+## Integración con Kiro
+
+Kiro admite servidores MCP mediante su archivo de configuración dedicado. Hay dos niveles disponibles:
+- **Global** (todos los proyectos): `~/.kiro/settings/mcp.json`
+- **Workspace** (solo este repositorio): `.kiro/settings/mcp.json`
+
+```json
+{
+  "mcpServers": {
+    "facturacion-es": {
+      "command": "uvx",
+      "args": ["mcp-facturacion-electronica-es"],
+      "env": {
+        "AEAT_ENV": "sandbox",
+        "AEAT_CERTIFICATE_PATH": "/ruta/al/cert.p12",
+        "AEAT_CERTIFICATE_PASSWORD": "contrasena-del-certificado"
+      },
+      "disabled": false,
+      "autoApprove": []
+    }
+  }
+}
+```
+
+El archivo se recarga automaticamente al guardar. Tambien puede abrir la configuracion desde la paleta de comandos (`Cmd+Shift+P` / `Ctrl+Shift+P`) y luego *MCP*.
+
+> **Consejo de seguridad de Kiro**: en lugar de escribir los secretos en texto plano, use la sintaxis `"AEAT_CERTIFICATE_PASSWORD": "${AEAT_CERTIFICATE_PASSWORD}"`, Kiro resuelve las variables de entorno de la shell al iniciar.
+
+## Herramientas disponibles
 
 ### VERI\*FACTU
 
@@ -602,89 +686,6 @@ Extrae `EstadoEnvio` (`Correcto`/`AceptadoConErrores`/`Incorrecto`), `CSV`
 
 > ⚠️ Pendiente de confirmacion regulatoria
 
----
-
-## Instalacion
-
-### Desde PyPI (recomendado)
-
-```bash
-pip install mcp-facturacion-electronica-es
-```
-
-Sin instalacion previa, con `uvx`:
-
-```bash
-uvx mcp-facturacion-electronica-es
-```
-
-### Desde las fuentes
-
-```bash
-git clone https://github.com/cmendezs/mcp-facturacion-electronica-es.git
-cd mcp-facturacion-electronica-es
-uv sync --all-extras
-```
-
----
-
-## Configuracion
-
-### Claude Desktop
-
-```json
-{
-  "mcpServers": {
-    "facturacion-es": {
-      "command": "uvx",
-      "args": ["mcp-facturacion-electronica-es"],
-      "env": {
-        "AEAT_ENV": "sandbox",
-        "AEAT_CERTIFICATE_PATH": "/ruta/al/cert.p12",
-        "AEAT_CERTIFICATE_PASSWORD": "contrasena-del-certificado"
-      }
-    }
-  }
-}
-```
-
-Toda la configuracion se realiza mediante variables de entorno o un archivo `.env`.
-
-### AEAT / VERI\*FACTU / SII
-
-| Variable | Descripcion | Obligatorio |
-|---|---|---|
-| `AEAT_ENV` | `sandbox` o `production` | Si |
-| `AEAT_CERTIFICATE_PATH` | Ruta al certificado PKCS#12 FNMT-RCM | Para el envio |
-| `AEAT_CERTIFICATE_PASSWORD` | Contrasena del certificado | Para el envio |
-| `AEAT_NIF` | NIF del contribuyente | Para el envio |
-
-### FACe
-
-| Variable | Descripcion | Obligatorio |
-|---|---|---|
-| `FACE_ENV` | `sandbox` o `production` | Si |
-
-FACe se autentica mediante JWS usando el mismo certificado `AEAT_CERTIFICATE_PATH` /
-`AEAT_CERTIFICATE_PASSWORD` que VERI\*FACTU/SII (ver la seccion AEAT anterior); no se
-requieren credenciales FACe independientes.
-
-### TicketBAI
-
-| Variable | Descripcion | Obligatorio |
-|---|---|---|
-| `TICKETBAI_ENV` | `sandbox` o `production` | Si |
-| `TICKETBAI_CERTIFICATE_PATH` | Ruta del certificado de firma provincial | Si |
-| `TICKETBAI_CERTIFICATE_PASSWORD` | Contrasena del certificado | Si |
-
-### Comunes (heredadas de `mcp-einvoicing-core`)
-
-| Variable | Descripcion | Por defecto |
-|---|---|---|
-| `LOG_LEVEL` | `DEBUG`, `INFO`, `WARNING`, `ERROR` | `INFO` |
-
----
-
 ## Arquitectura
 
 `mcp-facturacion-electronica-es` es un adaptador de pais dentro de la familia `mcp-einvoicing`,
@@ -711,13 +712,45 @@ mcp-einvoicing-core (v0.1.0+)
 └── mcp-ksef-pl                    (Polonia — KSeF / FA(2))
 ```
 
-## Notas de cumplimiento normativo
+## Normas admitidas
+
+El ecosistema español de facturación electrónica cuenta con **seis sistemas coexistentes** con
+ámbitos, formatos y calendarios distintos. VERI\*FACTU introduce registros de factura
+inviolables encadenados que se envían en tiempo real a la AEAT (Agencia Estatal de
+Administración Tributaria), aplicable a la mayoría de empresas a partir de 2027 (RD-ley 15/2025).
+El SII ya es obligatorio para grandes contribuyentes bajo una ventana de comunicación de
+4 días. Facturae XML con firma XAdES-EPES cubre toda la facturación B2G a través del portal
+FACe. El País Vasco aplica TicketBAI de forma independiente, con tres autoridades provinciales
+que mantienen cada una sus propios esquemas XSD y endpoints. Navarra opera NaTicket. La Ley
+Crea y Crece exige la facturación electrónica B2B para todas las empresas; el RD 238/2026
+(BOE-A-2026-7295) confirma los formatos admitidos (EN 16931: CII/UBL/EDIFACT/Facturae),
+mientras que la Orden Ministerial que desarrolla el paquete técnico de la solución pública
+sigue pendiente. La detección del régimen a partir del domicilio
+fiscal y el volumen de operaciones es un requisito previo a todas las demás operaciones:
+utilice `es__detect_regional_regime` en primer lugar.
+
+### Cobertura regulatoria
+
+| Sistema | Ámbito | Formato | Obligatorio desde | Estado |
+|---|---|---|---|---|
+| **VERI\*FACTU** | Todas las empresas no-SII | XML propietario (XSD v1.0 HAC/1177/2024) | IS: ene 2027 / Otros: jul 2027 (RD-ley 15/2025) | Implementado (pendiente de confirmacion regulatoria) |
+| **Facturae / FACe** | B2G (sector público) | Facturae 3.2.2 + XAdES-EPES | Obligatorio desde 2015 (Ley 25/2013) | Implementado (pendiente de confirmacion regulatoria) |
+| **SII** | Facturación >6M EUR, grupos IVA, REDEME | XML SOAP/REST AEAT | Ya obligatorio (RD 596/2016) | Implementado (pendiente de confirmacion regulatoria) |
+| **TicketBAI** | Araba, Gipuzkoa, Bizkaia | XML provincial + XAdES + QR | Según provincia, 2022-2023 | Eliminado del alcance (v0.2.0) |
+| **Crea y Crece (B2B)** | Todas las empresas (12/24 meses tras la OM, según facturación) | UBL 2.1 o Facturae 3.2.2 (EN 16931); CII/EDIFACT también admitidos, no implementados | RD 238/2026 publicado; Orden Ministerial (solución pública) pendiente | Implementado (formatos confirmados por RD 238/2026; solución pública pendiente de la OM) |
+| **NaTicket** | Navarra | XML foral + firma | Mandato foral (implantacion escalonada) | Parcial (via `es__detect_regional_regime`) |
+
+> **Exclusion mutua SII / VERI\*FACTU (Real Decreto 254/2025):** Los contribuyentes
+> inscritos en el SII quedan exentos de VERI\*FACTU. Utilice `es__check_b2b_mandate_applicability`
+> antes de generar cualquier registro.
+
+### Notas de cumplimiento normativo
 
 > **Aviso:** Las fechas de mandato reflejan el RD-ley 15/2025 (diciembre 2025) y estan
 > sujetas a cambios por legislacion posterior o instrucciones administrativas de la AEAT.
 > Este software no constituye asesoramiento juridico ni fiscal.
 
-### Calendario de mandatos
+**Calendario de mandatos**
 
 | Sistema | Destinatarios | Plazo |
 |---|---|---|
@@ -729,7 +762,7 @@ mcp-einvoicing-core (v0.1.0+)
 | Crea y Crece B2B | Facturacion >8M EUR (art. 121 Ley 37/1992) | **12 meses** tras la entrada en vigor de la Orden Ministerial `[Fecha no verificada]` |
 | Crea y Crece B2B | Resto de empresas | **24 meses** tras la entrada en vigor de la Orden Ministerial `[Fecha no verificada]` |
 
-### Excepciones regionales
+**Excepciones regionales**
 
 - **Pais Vasco:** TicketBAI aplica **en lugar de** VERI\*FACTU.
   Cada una de las tres provincias (Araba, Gipuzkoa, Bizkaia) tiene un XSD, endpoint
@@ -741,8 +774,6 @@ mcp-einvoicing-core (v0.1.0+)
 
 Todos los endpoints de envio de la AEAT requieren un certificado FNMT-RCM o de CA acreditada.
 La AEAT dispone de un entorno de pruebas gratuito en `prewww2.aeat.es`.
-
----
 
 ## Tests
 
@@ -756,8 +787,6 @@ uv run pytest tests/ -v
 # Con informe de cobertura
 uv run pytest --cov=mcp_facturacion_electronica_es --cov-report=term-missing
 ```
-
----
 
 ## Contribuir
 
@@ -778,8 +807,6 @@ una version oficial del XSD o una version de la guia tecnica de la AEAT. No elim
 `⚠️ Pendiente de confirmacion regulatoria` sin enlazar la fuente verificada en la
 descripcion del PR.
 
----
-
 ## Otros servidores MCP de facturación electrónica
 
 | País | Servidor |
@@ -795,9 +822,7 @@ descripcion del PR.
 | 🇪🇸 España | [mcp-facturacion-electronica-es](https://github.com/cmendezs/mcp-facturacion-electronica-es) |
 | 🇦🇪 Emiratos Árabes Unidos | [mcp-einvoicing-ae](https://github.com/cmendezs/mcp-einvoicing-ae) |
 
----
-
 ## Licencia
 
 Publicado bajo la [licencia Apache 2.0](LICENSE).
-Copyright 2025-2026 Christophe Mendez y colaboradores.
+Copyright 2025-2026 Christophe Mendez y colaboradores. Para el historial completo de versiones, vea [CHANGELOG.md](CHANGELOG.md).

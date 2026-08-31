@@ -16,9 +16,11 @@
 in Spanish e-invoicing. It provides tools to generate, validate, and submit electronic
 invoices under the six coexisting systems in Spain: VERI\*FACTU, Facturae/FACe,
 SII, TicketBAI (Basque Country), NaTicket (Navarre), and the B2B obligations of Ley 18/2022
-"Crea y Crece". The server is built on `mcp-einvoicing-core`, the shared base library
-used by `mcp-facture-electronique-fr` (France, XP Z12-013) and `mcp-einvoicing-be`
-(Belgium, Peppol BIS 3.0).
+"Crea y Crece". The server is built on [**mcp-einvoicing-core**](https://github.com/cmendezs/mcp-einvoicing-core),
+the shared base library used by `mcp-facture-electronique-fr` (France, XP Z12-013) and
+`mcp-einvoicing-be` (Belgium, Peppol BIS 3.0), which provides common models, validation
+abstractions, XML utilities, and the exception hierarchy. `mcp-einvoicing-core` is installed
+automatically as a transitive dependency, no additional steps are required.
 
 Spain operates one of the most complex e-invoicing landscapes in Europe, with six overlapping
 systems that apply depending on taxpayer size, sector, and region. VERI\*FACTU
@@ -29,55 +31,138 @@ large taxpayers (>6M EUR turnover). The Basque Country runs TicketBAI and Navarr
 both independent of the national AEAT framework. B2G invoicing via Facturae XML on the FACe
 portal has been mandatory since 2015 (Ley 25/2013).
 
----
+## Installation
 
-## Built on
+### From PyPI (recommended)
 
-This package is built on [**mcp-einvoicing-core**](https://github.com/cmendezs/mcp-einvoicing-core),
-the shared base library used by all MCP servers in the `mcp-einvoicing` ecosystem. It provides
-common models, validation abstractions, XML utilities, and the exception hierarchy.
+```bash
+pip install mcp-facturacion-electronica-es
+```
 
-`mcp-einvoicing-core` is installed automatically as a transitive dependency, no additional
-steps are required.
+Without prior installation, using `uvx`:
 
----
+```bash
+uvx mcp-facturacion-electronica-es
+```
 
-## Overview
+### From source
 
-The Spanish e-invoicing ecosystem has **six coexisting systems** with distinct scopes,
-formats, and timelines. VERI\*FACTU introduces tamper-proof chained invoice records
-submitted in real time to the AEAT (Agencia Estatal de Administracion Tributaria),
-applicable to most businesses from 2027 (RD-ley 15/2025). SII is already mandatory for
-large taxpayers under a 4-day communication window. Facturae XML with XAdES-EPES signing
-covers all B2G invoicing through the FACe portal. The Basque Country applies TicketBAI
-independently, with three provincial authorities each maintaining their own XSD schemas and
-endpoints. Navarre operates NaTicket. The Ley Crea y Crece mandates B2B e-invoicing for
-all businesses; RD 238/2026 (BOE-A-2026-7295) confirms the admitted formats (EN 16931:
-CII/UBL/EDIFACT/Facturae), while the Orden Ministerial developing the public-solution
-technical package is still pending. Regime detection
-based on tax domicile and turnover is a prerequisite to all other operations: use
-`es__detect_regional_regime` first.
+```bash
+git clone https://github.com/cmendezs/mcp-facturacion-electronica-es.git
+cd mcp-facturacion-electronica-es
+uv sync --all-extras
+```
 
----
+## Configuration
 
-## Regulatory coverage
+All configuration is done through environment variables or a `.env` file.
 
-| System | Scope | Format | Mandatory from | Status |
-|---|---|---|---|---|
-| **VERI\*FACTU** | All non-SII businesses | Proprietary XML (XSD v1.0 HAC/1177/2024) | IS: Jan 2027 / Others: Jul 2027 (RD-ley 15/2025) | Implemented (pending regulatory confirmation) |
-| **Facturae / FACe** | B2G (public sector) | Facturae 3.2.2 + XAdES-EPES | Mandatory since 2015 (Ley 25/2013) | Implemented (pending regulatory confirmation) |
-| **SII** | Turnover >6M EUR, VAT groups, REDEME | XML SOAP/REST AEAT | Already mandatory (RD 596/2016) | Implemented (pending regulatory confirmation) |
-| **TicketBAI** | Araba, Gipuzkoa, Bizkaia | Provincial XML + XAdES + QR | By province, 2022-2023 | Removed from scope (v0.2.0) |
-| **Crea y Crece (B2B)** | All businesses (12/24 months after OM, by turnover) | UBL 2.1 or Facturae 3.2.2 (EN 16931); CII/EDIFACT also admitted, not implemented | RD 238/2026 published; Orden Ministerial (public solution) pending | Implemented (formats confirmed by RD 238/2026; public-solution wiring deferred to OM) |
-| **NaTicket** | Navarre | Foral XML + signature | Foral mandate (phased rollout) | Partial (via `es__detect_regional_regime`) |
+### AEAT / VERI\*FACTU / SII
 
-> **SII / VERI\*FACTU mutual exclusion (Real Decreto 254/2025):** Taxpayers enrolled in
-> SII are exempt from VERI\*FACTU. Use `es__check_b2b_mandate_applicability`
-> before generating any record.
+| Variable | Description | Required |
+|---|---|---|
+| `AEAT_ENV` | `sandbox` or `production` | Yes |
+| `AEAT_CERTIFICATE_PATH` | Path to FNMT-RCM PKCS#12 certificate | For submission |
+| `AEAT_CERTIFICATE_PASSWORD` | Certificate password | For submission |
+| `AEAT_NIF` | Taxpayer NIF | For submission |
 
----
+### FACe
 
-## Tools
+| Variable | Description | Required |
+|---|---|---|
+| `FACE_ENV` | `sandbox` or `production` | Yes |
+
+FACe authenticates via JWS using the same `AEAT_CERTIFICATE_PATH` / `AEAT_CERTIFICATE_PASSWORD`
+certificate as VERI\*FACTU/SII (see the AEAT section above); no separate FACe credentials are
+required.
+
+### TicketBAI
+
+| Variable | Description | Required |
+|---|---|---|
+| `TICKETBAI_ENV` | `sandbox` or `production` | Yes |
+| `TICKETBAI_CERTIFICATE_PATH` | Provincial signing certificate path | Yes |
+| `TICKETBAI_CERTIFICATE_PASSWORD` | Certificate password | Yes |
+
+### Common (inherited from `mcp-einvoicing-core`)
+
+| Variable | Description | Default |
+|---|---|---|
+| `LOG_LEVEL` | `DEBUG`, `INFO`, `WARNING`, `ERROR` | `INFO` |
+
+## Claude Desktop integration
+
+To use this server with Claude, add this configuration to your `claude_desktop_config.json` file:
+
+```json
+{
+  "mcpServers": {
+    "facturacion-es": {
+      "command": "uvx",
+      "args": ["mcp-facturacion-electronica-es"],
+      "env": {
+        "AEAT_ENV": "sandbox",
+        "AEAT_CERTIFICATE_PATH": "/path/to/cert.p12",
+        "AEAT_CERTIFICATE_PASSWORD": "certificate-password"
+      }
+    }
+  }
+}
+```
+
+## Cursor integration
+
+Cursor supports MCP servers via stdio. Add the configuration in:
+- **Global** (all projects): `~/.cursor/mcp.json`
+- **Project** (this repository only): `.cursor/mcp.json`
+
+```json
+{
+  "mcpServers": {
+    "facturacion-es": {
+      "command": "uvx",
+      "args": ["mcp-facturacion-electronica-es"],
+      "env": {
+        "AEAT_ENV": "sandbox",
+        "AEAT_CERTIFICATE_PATH": "/path/to/cert.p12",
+        "AEAT_CERTIFICATE_PASSWORD": "certificate-password"
+      }
+    }
+  }
+}
+```
+
+Reload the Cursor window (`Ctrl+Shift+P` then *Reload Window*) to apply the changes.
+
+## Kiro integration
+
+Kiro supports MCP servers via its dedicated configuration file. Two levels are available:
+- **Global** (all projects): `~/.kiro/settings/mcp.json`
+- **Workspace** (this repository only): `.kiro/settings/mcp.json`
+
+```json
+{
+  "mcpServers": {
+    "facturacion-es": {
+      "command": "uvx",
+      "args": ["mcp-facturacion-electronica-es"],
+      "env": {
+        "AEAT_ENV": "sandbox",
+        "AEAT_CERTIFICATE_PATH": "/path/to/cert.p12",
+        "AEAT_CERTIFICATE_PASSWORD": "certificate-password"
+      },
+      "disabled": false,
+      "autoApprove": []
+    }
+  }
+}
+```
+
+The file is automatically reloaded on save. You can also open the config via the command palette (`Cmd+Shift+P` / `Ctrl+Shift+P`) then *MCP*.
+
+> **Kiro security tip**: rather than writing secrets in plain text, use the syntax `"AEAT_CERTIFICATE_PASSWORD": "${AEAT_CERTIFICATE_PASSWORD}"`, Kiro resolves shell environment variables at startup.
+
+## Available tools
 
 ### VERI\*FACTU
 
@@ -592,89 +677,6 @@ Extracts `EstadoEnvio` (`Correcto`/`AceptadoConErrores`/`Incorrecto`), `CSV`
 
 > ⚠️ Pending regulatory confirmation
 
----
-
-## Installation
-
-### From PyPI (recommended)
-
-```bash
-pip install mcp-facturacion-electronica-es
-```
-
-Without prior installation, using `uvx`:
-
-```bash
-uvx mcp-facturacion-electronica-es
-```
-
-### From source
-
-```bash
-git clone https://github.com/cmendezs/mcp-facturacion-electronica-es.git
-cd mcp-facturacion-electronica-es
-uv sync --all-extras
-```
-
----
-
-## Configuration
-
-### Claude Desktop
-
-```json
-{
-  "mcpServers": {
-    "facturacion-es": {
-      "command": "uvx",
-      "args": ["mcp-facturacion-electronica-es"],
-      "env": {
-        "AEAT_ENV": "sandbox",
-        "AEAT_CERTIFICATE_PATH": "/path/to/cert.p12",
-        "AEAT_CERTIFICATE_PASSWORD": "certificate-password"
-      }
-    }
-  }
-}
-```
-
-All configuration is done through environment variables or a `.env` file.
-
-### AEAT / VERI\*FACTU / SII
-
-| Variable | Description | Required |
-|---|---|---|
-| `AEAT_ENV` | `sandbox` or `production` | Yes |
-| `AEAT_CERTIFICATE_PATH` | Path to FNMT-RCM PKCS#12 certificate | For submission |
-| `AEAT_CERTIFICATE_PASSWORD` | Certificate password | For submission |
-| `AEAT_NIF` | Taxpayer NIF | For submission |
-
-### FACe
-
-| Variable | Description | Required |
-|---|---|---|
-| `FACE_ENV` | `sandbox` or `production` | Yes |
-
-FACe authenticates via JWS using the same `AEAT_CERTIFICATE_PATH` / `AEAT_CERTIFICATE_PASSWORD`
-certificate as VERI\*FACTU/SII (see the AEAT section above); no separate FACe credentials are
-required.
-
-### TicketBAI
-
-| Variable | Description | Required |
-|---|---|---|
-| `TICKETBAI_ENV` | `sandbox` or `production` | Yes |
-| `TICKETBAI_CERTIFICATE_PATH` | Provincial signing certificate path | Yes |
-| `TICKETBAI_CERTIFICATE_PASSWORD` | Certificate password | Yes |
-
-### Common (inherited from `mcp-einvoicing-core`)
-
-| Variable | Description | Default |
-|---|---|---|
-| `LOG_LEVEL` | `DEBUG`, `INFO`, `WARNING`, `ERROR` | `INFO` |
-
----
-
 ## Architecture
 
 `mcp-facturacion-electronica-es` is a country adapter within the `mcp-einvoicing` family,
@@ -701,13 +703,44 @@ mcp-einvoicing-core (v0.1.0+)
 └── mcp-ksef-pl                    (Poland — KSeF / FA(2))
 ```
 
-## Compliance notes
+## Supported standards
+
+The Spanish e-invoicing ecosystem has **six coexisting systems** with distinct scopes,
+formats, and timelines. VERI\*FACTU introduces tamper-proof chained invoice records
+submitted in real time to the AEAT (Agencia Estatal de Administracion Tributaria),
+applicable to most businesses from 2027 (RD-ley 15/2025). SII is already mandatory for
+large taxpayers under a 4-day communication window. Facturae XML with XAdES-EPES signing
+covers all B2G invoicing through the FACe portal. The Basque Country applies TicketBAI
+independently, with three provincial authorities each maintaining their own XSD schemas and
+endpoints. Navarre operates NaTicket. The Ley Crea y Crece mandates B2B e-invoicing for
+all businesses; RD 238/2026 (BOE-A-2026-7295) confirms the admitted formats (EN 16931:
+CII/UBL/EDIFACT/Facturae), while the Orden Ministerial developing the public-solution
+technical package is still pending. Regime detection
+based on tax domicile and turnover is a prerequisite to all other operations: use
+`es__detect_regional_regime` first.
+
+### Regulatory coverage
+
+| System | Scope | Format | Mandatory from | Status |
+|---|---|---|---|---|
+| **VERI\*FACTU** | All non-SII businesses | Proprietary XML (XSD v1.0 HAC/1177/2024) | IS: Jan 2027 / Others: Jul 2027 (RD-ley 15/2025) | Implemented (pending regulatory confirmation) |
+| **Facturae / FACe** | B2G (public sector) | Facturae 3.2.2 + XAdES-EPES | Mandatory since 2015 (Ley 25/2013) | Implemented (pending regulatory confirmation) |
+| **SII** | Turnover >6M EUR, VAT groups, REDEME | XML SOAP/REST AEAT | Already mandatory (RD 596/2016) | Implemented (pending regulatory confirmation) |
+| **TicketBAI** | Araba, Gipuzkoa, Bizkaia | Provincial XML + XAdES + QR | By province, 2022-2023 | Removed from scope (v0.2.0) |
+| **Crea y Crece (B2B)** | All businesses (12/24 months after OM, by turnover) | UBL 2.1 or Facturae 3.2.2 (EN 16931); CII/EDIFACT also admitted, not implemented | RD 238/2026 published; Orden Ministerial (public solution) pending | Implemented (formats confirmed by RD 238/2026; public-solution wiring deferred to OM) |
+| **NaTicket** | Navarre | Foral XML + signature | Foral mandate (phased rollout) | Partial (via `es__detect_regional_regime`) |
+
+> **SII / VERI\*FACTU mutual exclusion (Real Decreto 254/2025):** Taxpayers enrolled in
+> SII are exempt from VERI\*FACTU. Use `es__check_b2b_mandate_applicability`
+> before generating any record.
+
+### Compliance notes
 
 > **Notice:** Mandate dates reflect RD-ley 15/2025 (December 2025) and are
 > subject to changes by subsequent legislation or AEAT administrative instructions.
 > This software does not constitute legal or tax advice.
 
-### Mandate timeline
+**Mandate timeline**
 
 | System | Targets | Deadline |
 |---|---|---|
@@ -719,7 +752,7 @@ mcp-einvoicing-core (v0.1.0+)
 | Crea y Crece B2B | Turnover >8M EUR (art. 121 Ley 37/1992) | **12 months** after the Orden Ministerial's entry into force `[Unverified date]` |
 | Crea y Crece B2B | All other businesses | **24 months** after the Orden Ministerial's entry into force `[Unverified date]` |
 
-### Regional exceptions
+**Regional exceptions**
 
 - **Basque Country:** TicketBAI applies **instead of** VERI\*FACTU.
   Each of the three provinces (Araba, Gipuzkoa, Bizkaia) has a different XSD, endpoint,
@@ -731,8 +764,6 @@ mcp-einvoicing-core (v0.1.0+)
 
 All AEAT submission endpoints require an FNMT-RCM certificate or one from an accredited CA.
 The AEAT provides a free test environment at `prewww2.aeat.es`.
-
----
 
 ## Tests
 
@@ -746,8 +777,6 @@ uv run pytest tests/ -v
 # With coverage report
 uv run pytest --cov=mcp_facturacion_electronica_es --cov-report=term-missing
 ```
-
----
 
 ## Contributing
 
@@ -768,8 +797,6 @@ or an AEAT technical guide version. Do not remove
 `⚠️ Pending regulatory confirmation` without linking the verified source in the
 PR description.
 
----
-
 ## Other e-invoicing MCP servers
 
 | Country | Server |
@@ -785,9 +812,7 @@ PR description.
 | 🇪🇸 Spain | [mcp-facturacion-electronica-es](https://github.com/cmendezs/mcp-facturacion-electronica-es) |
 | 🇦🇪 United Arab Emirates | [mcp-einvoicing-ae](https://github.com/cmendezs/mcp-einvoicing-ae) |
 
----
-
 ## License
 
 Released under the [Apache License 2.0](LICENSE).
-Copyright 2025-2026 Christophe Mendez and contributors.
+Copyright 2025-2026 Christophe Mendez and contributors. For the full version history, see [CHANGELOG.md](CHANGELOG.md).
