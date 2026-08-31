@@ -814,5 +814,4 @@ PR description.
 
 ## License
 
-Released under the [Apache License 2.0](LICENSE).
-Copyright 2025-2026 Christophe Mendez and contributors. For the full version history, see [CHANGELOG.md](CHANGELOG.md).
+Released under the [Apache License 2.0](LICENSE). For the full version history, see [CHANGELOG.md](CHANGELOG.md).

@@ -824,5 +824,4 @@ descripcion del PR.
 
 ## Licencia
 
-Publicado bajo la [licencia Apache 2.0](LICENSE).
-Copyright 2025-2026 Christophe Mendez y colaboradores. Para el historial completo de versiones, vea [CHANGELOG.md](CHANGELOG.md).
+Publicado bajo la [licencia Apache 2.0](LICENSE). Para el historial completo de versiones, vea [CHANGELOG.md](CHANGELOG.md).
