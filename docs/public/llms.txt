@@ -1,0 +1,17 @@
+# mcp-facturacion-electronica-es
+
+> MCP server for Spanish electronic invoicing (VERI*FACTU, Facturae/FACe, SII, Crea y Crece B2B)
+
+## Docs
+
+- [Overview](https://cmendezs.github.io/mcp-facturacion-electronica-es/): the full README — what this server does, installation, configuration, available tools
+- [Tools](https://cmendezs.github.io/mcp-facturacion-electronica-es/tools/): full MCP tool reference
+- [Changelog](https://cmendezs.github.io/mcp-facturacion-electronica-es/changelog/): version history
+- [Contributing](https://cmendezs.github.io/mcp-facturacion-electronica-es/contributing/): dev setup and PR checklist
+- [Security](https://cmendezs.github.io/mcp-facturacion-electronica-es/security/): vulnerability disclosure policy
+
+## Links
+
+- [PyPI](https://pypi.org/project/mcp-facturacion-electronica-es/)
+- [MCP registry](https://registry.modelcontextprotocol.io/v0/servers?search=io.github.cmendezs/mcp-facturacion-electronica-es)
+- [GitHub](https://github.com/cmendezs/mcp-facturacion-electronica-es)
