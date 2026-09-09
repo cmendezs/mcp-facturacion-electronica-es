@@ -1,6 +1,6 @@
 # mcp-facturacion-electronica-es
 
-> MCP server for Spanish electronic invoicing (VERI*FACTU, Facturae/FACe, SII, Crea y Crece B2B)
+> MCP server for Spanish electronic invoicing (VERI*FACTU, Facturae/FACe, SII, Crea y Crece B2B), direct-to-authority, no intermediary
 
 ## Docs
 

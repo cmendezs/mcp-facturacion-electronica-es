@@ -8,7 +8,7 @@ export default defineConfig({
   integrations: [
     starlight({
       title: "mcp-facturacion-electronica-es",
-      description: "MCP server for Spanish electronic invoicing (VERI*FACTU, Facturae/FACe, SII, Crea y Crece B2B)",
+      description: "MCP server for Spanish electronic invoicing (VERI*FACTU, Facturae/FACe, SII, Crea y Crece B2B), direct-to-authority, no intermediary",
       customCss: ["./src/styles/docs-theme.css"],
       social: [
         { icon: "github", label: "GitHub", href: "https://github.com/cmendezs/mcp-facturacion-electronica-es" },
@@ -28,7 +28,7 @@ export default defineConfig({
       plugins: [
         starlightLlmsTxt({
           projectName: "mcp-facturacion-electronica-es",
-          description: "MCP server for Spanish electronic invoicing (VERI*FACTU, Facturae/FACe, SII, Crea y Crece B2B)",
+          description: "MCP server for Spanish electronic invoicing (VERI*FACTU, Facturae/FACe, SII, Crea y Crece B2B), direct-to-authority, no intermediary",
           customSets: [
             {
               label: "Key links",

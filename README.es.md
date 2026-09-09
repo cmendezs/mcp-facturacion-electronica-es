@@ -718,6 +718,16 @@ mcp-einvoicing-core (v0.1.0+)
 └── mcp-ksef-pl                    (Polonia — KSeF / FA(2))
 ```
 
+## Neutralidad respecto a proveedores
+
+Este servidor implementa el estandar por si mismo: construye, valida y firma el documento
+localmente. No es un cliente de ninguna plataforma comercial de facturacion, y tus claves de
+firma y credenciales nunca salen de tu propia infraestructura.
+
+Los registros y facturas van directamente a la autoridad fiscal (la AEAT via SII y VeriFactu,
+FACe, o la plataforma provincial TicketBAI correspondiente) usando tu propio certificado; no
+interviene ningun intermediario.
+
 ## Normas admitidas
 
 El ecosistema español de facturación electrónica cuenta con **seis sistemas coexistentes** con

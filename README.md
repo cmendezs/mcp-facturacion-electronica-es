@@ -707,6 +707,16 @@ mcp-einvoicing-core (v0.1.0+)
 └── mcp-ksef-pl                    (Poland — KSeF / FA(2))
 ```
 
+## Vendor neutrality
+
+This server implements the standard itself: it builds, validates, and signs the document
+locally. It is not a client for a commercial invoicing platform, and your signing keys and
+credentials never leave your own infrastructure.
+
+Records and invoices go directly to the tax authority — the AEAT (SII, VeriFactu), FACe, or
+the relevant provincial TicketBAI platform — using your own certificate; no intermediary is
+involved.
+
 ## Supported standards
 
 The Spanish e-invoicing ecosystem has **six coexisting systems** with distinct scopes,
