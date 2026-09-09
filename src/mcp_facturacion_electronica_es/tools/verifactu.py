@@ -1,7 +1,9 @@
 """MCP tools: VERI*FACTU — registro, validacion, envio, QR y anulacion.
 
 VERI*FACTU (Real Decreto 1007/2023, Orden HAC/1177/2024):
-    XSD v1.0 (SuministroLR.xsd): specs/verifactu/xsd/
+    XSD v1.0 (SuministroLR.xsd): bundled at runtime under
+    resources/verifactu/ (provenance: specs/verifactu/xsd/, see that
+    directory's README)
     WSDL (RegFactuSistemaFacturacion + ConsultaFactuSistemaFacturacion, same
     endpoint, "sfVerifactu" binding): specs/verifactu/schemas/SistemaFacturacion.wsdl
         Sandbox (personal cert):    https://prewww1.aeat.es/wlpl/TIKE-CONT/ws/SistemaFacturacion/VerifactuSOAP
@@ -38,6 +40,7 @@ import hashlib
 import logging
 from datetime import datetime
 from decimal import Decimal
+from pathlib import Path
 from typing import Any
 from urllib.parse import quote_plus
 
@@ -87,6 +90,16 @@ _VF_CONSULTA_NS = (
 _VERIFACTU_VERSION = "1.0"
 # IdSistemaInformatico is TextMax2Type in SuministroInformacion.xsd — max 2 characters
 _SOFTWARE_ID_CODE = "ES"
+
+# __file__ = src/mcp_facturacion_electronica_es/tools/verifactu.py — two .parent
+# hops reach the package root, mcp_facturacion_electronica_es/. Moved from
+# repo-root specs/ into this package's own resources/ 2026-09-09 (CORE-1,
+# audit/2026-09-audit-core.md): the old four-hop path resolved outside the
+# installed package once pip-installed from a wheel, silently degrading every
+# call to structural-only validation. SuministroInformacion.xsd must stay
+# alongside it — SuministroLR.xsd `<import>`s it by relative schemaLocation.
+_RESOURCES_DIR = Path(__file__).resolve().parent.parent / "resources" / "verifactu"
+_SUMINISTRO_LR_XSD = _RESOURCES_DIR / "SuministroLR.xsd"
 
 
 # ---------------------------------------------------------------------------
@@ -763,7 +776,7 @@ async def es__validate_verifactu_record(
     """Valida un registro VERI*FACTU XML.
 
     Realiza validación estructural y, si el XSD v1.0 (HAC/1177/2024) está
-    disponible en specs/verifactu/, también validación de esquema.
+    disponible en resources/verifactu/, también validación de esquema.
 
     Args:
         xml: Registro VERI*FACTU XML en crudo.
@@ -825,34 +838,31 @@ async def es__validate_verifactu_record(
             _req(tag)
 
         # --- XSD validation (SuministroLR.xsd is the root schema for submissions) ---
-        import pathlib  # noqa: PLC0415
-
-        # __file__ = src/mcp_facturacion_electronica_es/tools/verifactu.py — four
-        # .parent hops reach the package root where specs/ lives (a prior
-        # version used three, landing on src/ and silently degrading every
-        # call to structural-only validation).
-        xsd_path = (
-            pathlib.Path(__file__).parent.parent.parent.parent
-            / "specs"
-            / "verifactu"
-            / "xsd"
-            / "SuministroLR.xsd"
-        )
         validation_mode = "structural"
 
-        if xsd_path.exists():
+        if _SUMINISTRO_LR_XSD.exists():
             try:
-                xsd_doc = etree.parse(str(xsd_path))
+                xsd_doc = etree.parse(str(_SUMINISTRO_LR_XSD))
                 schema = etree.XMLSchema(xsd_doc)
                 schema.validate(root)
                 for e in schema.error_log:
                     errors.append(f"[XSD] {e.message} (linea {e.line})")
                 validation_mode = "xsd"
             except Exception as exc:
+                # [Unverified] SuministroInformacion.xsd itself <import>s the
+                # W3C XML-DSig schema by absolute URL
+                # (http://www.w3.org/TR/xmldsig-core/xmldsig-core-schema.xsd),
+                # which is not bundled locally and does not resolve offline —
+                # confirmed 2026-09-09 that schema compilation currently fails
+                # for this reason (a `ds:Signature` element reference does not
+                # resolve). A local copy + core's XSDValidator known_imports
+                # resolver hook (v1.32.0, CORE-7 pattern) would fix this, but
+                # per project policy normative specs must be user-supplied,
+                # not agent-fetched — see roadmap-2026.md CORE-1-ES-DSIG.
                 warnings.append(f"XSD validation failed to run: {exc}")
         else:
             warnings.append(
-                "Validacion XSD no disponible — specs/verifactu/xsd/SuministroLR.xsd "
+                "Validacion XSD no disponible — resources/verifactu/SuministroLR.xsd "
                 "no encontrado. La validacion estructural esta activa."
             )
 

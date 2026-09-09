@@ -217,7 +217,7 @@ Validates a VERI\*FACTU XML record against the official XSD published with Orden
 > Structural checks now branch correctly on `RegistroAlta` vs. `RegistroAnulacion` (a prior version
 > false-flagged valid `RegistroAnulacion` documents as missing `TipoFactura`/`CuotaTotal`/`ImporteTotal`,
 > fields that only apply to `RegistroAlta`). Full XSD-mode validation (`SuministroLR.xsd`, bundled
-> under `specs/verifactu/xsd/`) requires network access at runtime — it imports the W3C xmldsig-core
+> under `resources/verifactu/`) requires network access at runtime — it imports the W3C xmldsig-core
 > schema by remote URL — and falls back to the structural checks above when that import can't
 > resolve.
 
@@ -411,8 +411,8 @@ response is never echoed to the LLM; only a structured, non-sensitive subset
 
 #### `es__validate_facturae_schema`
 
-Validates a Facturae XML against the official Facturae 3.2.2 XSD using `lxml`. Returns
-structured errors with XPath locations.
+Runs the structural field checklist against a Facturae XML, then attempts full XSD-mode
+validation against the official Facturae 3.2.2 schema using `lxml`.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
@@ -422,6 +422,10 @@ structured errors with XPath locations.
 ```json
 { "tool": "es__validate_facturae_schema", "arguments": { "xml": "<Facturae>...</Facturae>" } }
 ```
+
+> Full XSD-mode validation (`Facturaev3_2_2.xml`, bundled under `resources/facturae/`) requires
+> network access at runtime — it imports the W3C xmldsig-core schema by remote URL — and falls
+> back to the structural checks above when that import can't resolve.
 
 > ⚠️ Pending regulatory confirmation
 

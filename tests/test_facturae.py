@@ -101,6 +101,12 @@ async def test_handle_validate_facturae_schema_valid(minimal_facturae_xml) -> No
     data = await es__validate_facturae_schema(xml=minimal_facturae_xml)
     assert data["valid"] is True
     assert data["errors"] == []
+    # Pinned to today's known state, not the desired one: XSD compilation
+    # currently fails (missing local W3C xmldsig-core-schema.xsd import — see
+    # the warning comment in tools/facturae.py), so this still falls back to
+    # structural-only. Once that gap is closed this should flip to "xsd" —
+    # if it does, update this assertion rather than treating it as a failure.
+    assert data["validation_mode"] == "structural"
 
 
 @pytest.mark.asyncio
@@ -120,6 +126,26 @@ async def test_handle_validate_facturae_schema_invalid_xml() -> None:
     data = await es__validate_facturae_schema(xml="<bad xml <<<")
     assert data["valid"] is False
     assert len(data["errors"]) > 0
+
+
+def test_validate_facturae_xsd_path_resolves_to_bundled_schema() -> None:
+    """Regression (CORE-1): the module's own resolved XSD path must exist
+    inside the installed package (src/mcp_facturacion_electronica_es/), not
+    outside it. The old three-.parent-hop path landed on src/ itself and
+    never resolved under any layout, checkout or installed — no XSD
+    validation has ever actually executed here."""
+    from pathlib import Path
+
+    import mcp_facturacion_electronica_es as pkg
+    import mcp_facturacion_electronica_es.tools.facturae as facturae_module
+
+    package_root = Path(pkg.__file__).resolve().parent
+    assert facturae_module._FACTURAEV3_2_2_XSD.exists(), (
+        f"expected bundled XSD at {facturae_module._FACTURAEV3_2_2_XSD}"
+    )
+    assert facturae_module._FACTURAEV3_2_2_XSD.resolve().is_relative_to(package_root), (
+        "XSD path resolves outside the installed package — CORE-1 regression"
+    )
 
 
 # ---------------------------------------------------------------------------

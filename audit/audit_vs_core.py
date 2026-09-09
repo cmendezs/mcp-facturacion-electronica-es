@@ -37,6 +37,7 @@ from mcp_einvoicing_core.audit import (
     parse_audit_args,
     render_summary_table,
     run_check_core_coverage,
+    run_check_resource_paths,
     run_check_version_compatibility,
 )
 
@@ -263,6 +264,24 @@ _ES_MODULES: list[str] = [
 ]
 
 _PYPROJECT = Path(__file__).parent.parent / "pyproject.toml"
+
+# CHECK 7 configuration — every runtime resource directory this package's
+# own modules resolve at import time (CORE-1, core v1.32.0). Each entry is
+# the actual resolved Path object the running module computes, not a
+# re-derivation, so this exercises the same resolution logic as production.
+import mcp_facturacion_electronica_es as _pkg  # noqa: E402
+from mcp_facturacion_electronica_es.tools.facturae import (  # noqa: E402
+    _RESOURCES_DIR as _FACTURAE_RESOURCES_DIR,
+)
+from mcp_facturacion_electronica_es.tools.verifactu import (  # noqa: E402
+    _RESOURCES_DIR as _VERIFACTU_RESOURCES_DIR,
+)
+
+_PACKAGE_ROOT = Path(_pkg.__file__).resolve().parent
+_RESOURCE_PATHS: dict[str, Path] = {
+    "mcp_facturacion_electronica_es.tools.facturae._RESOURCES_DIR": _FACTURAE_RESOURCES_DIR,
+    "mcp_facturacion_electronica_es.tools.verifactu._RESOURCES_DIR": _VERIFACTU_RESOURCES_DIR,
+}
 
 
 # ---------------------------------------------------------------------------
@@ -975,6 +994,12 @@ def run_audit() -> AuditReport:
     )
     report.checks.append(run_check_5())
     report.checks.append(run_check_6())
+    report.checks.append(
+        run_check_resource_paths(
+            package_root=_PACKAGE_ROOT,
+            resource_paths=_RESOURCE_PATHS,
+        )
+    )
 
     return report
 

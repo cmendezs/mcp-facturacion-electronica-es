@@ -221,7 +221,7 @@ Valida un registro VERI\*FACTU XML contra el XSD oficial publicado con la Orden 
 > `RegistroAnulacion` (una version anterior marcaba erroneamente documentos `RegistroAnulacion`
 > validos como si les faltaran `TipoFactura`/`CuotaTotal`/`ImporteTotal`, campos que solo aplican
 > a `RegistroAlta`). La validacion en modo XSD completo (`SuministroLR.xsd`, incluido en
-> `specs/verifactu/xsd/`) requiere acceso a red en tiempo de ejecucion — importa el esquema
+> `resources/verifactu/`) requiere acceso a red en tiempo de ejecucion — importa el esquema
 > xmldsig-core de W3C mediante una URL remota — y recurre a las comprobaciones estructurales
 > anteriores cuando esa importacion no puede resolverse.
 
@@ -420,8 +420,9 @@ de FACe nunca se muestra al LLM; solo se devuelve un subconjunto estructurado y 
 
 #### `es__validate_facturae_schema`
 
-Valida un XML Facturae contra el XSD oficial de Facturae 3.2.2 mediante `lxml`. Devuelve
-errores estructurados con ubicaciones XPath.
+Ejecuta primero la lista de comprobaciones estructurales sobre un XML Facturae y despues
+intenta la validacion en modo XSD completo contra el esquema oficial de Facturae 3.2.2
+mediante `lxml`.
 
 | Parametro | Tipo | Obligatorio | Descripcion |
 |---|---|---|---|
@@ -431,6 +432,11 @@ errores estructurados con ubicaciones XPath.
 ```json
 { "tool": "es__validate_facturae_schema", "arguments": { "xml": "<Facturae>...</Facturae>" } }
 ```
+
+> La validacion en modo XSD completo (`Facturaev3_2_2.xml`, incluido en `resources/facturae/`)
+> requiere acceso a red en tiempo de ejecucion — importa el esquema xmldsig-core de W3C
+> mediante una URL remota — y recurre a las comprobaciones estructurales anteriores cuando esa
+> importacion no puede resolverse.
 
 > ⚠️ Pendiente de confirmacion regulatoria
 

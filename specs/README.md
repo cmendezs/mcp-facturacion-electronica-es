@@ -12,6 +12,7 @@ specs/
 ├── facturae/                   Factura-e 3.2.2 / FACe B2G submission platform
 │   ├── documentation/          FACe REST API and SOAP protocol manuals
 │   ├── examples/               Sample signed Factura-e invoice (.xsig)
+│   ├── xsd/                    Official XSD schema (Facturaev3_2_2.xml) — reference copy only, see below
 │   └── xslt/                   Official XSLT/XSL viewer stylesheets (3.2.1, 3.2.2)
 ├── sii/                        SII (Suministro Inmediato de Información) — AEAT VAT reporting
 │   ├── documentation/          Validation rules PDF + AEAT presentation
@@ -20,11 +21,22 @@ specs/
 ├── verifactu/                  VeriFactu — real-time AEAT invoice registry (RD 1007/2023)
 │   ├── documentation/          BOE legal text + official AEAT technical notes (huella, QR, web service)
 │   ├── schemas/                Official WSDL (SistemaFacturacion.wsdl)
-│   ├── xsd/                    Official XSD schemas (SuministroInformacion, SuministroLR, etc.)
+│   ├── xsd/                    Official XSD schemas (SuministroInformacion, ConsultaLR, etc.) — SuministroLR.xsd itself moved, see below
 │   └── examples/               Official signed RegistroAlta examples (AnexosEjemplosFirmaRegFact.zip)
 └── crea-y-crece/               Ley Crea y Crece — future B2B mandate (Ley 18/2022)
     └── documentation/          BOE law text only; technical specs pending Ministerial Order
 ```
+
+## Runtime artifacts (shipped in the wheel)
+
+The two XSD schemas this package actually loads at call time —
+`facturae/xsd/Facturaev3_2_2.xml` and `verifactu/xsd/SuministroLR.xsd` — live under
+[`src/mcp_facturacion_electronica_es/resources/`](../src/mcp_facturacion_electronica_es/resources/),
+not here. Moved there 2026-09-09 (CORE-1, `audit/2026-09-audit-core.md`): the old repo-root
+paths either broke once pip-installed from a wheel (`verifactu`) or never resolved under any
+layout at all (`facturae`, found in the same pass). `specs/facturae/xsd/` and
+`specs/verifactu/xsd/` (the other files in it, e.g. `ConsultaLR.xsd`) remain reference-only —
+see that directory's own README for the file-by-file mapping.
 
 ## Sources and versions
 

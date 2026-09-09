@@ -296,7 +296,7 @@ confirmation_token para ejecutar el envío real.
 Valida un XML Facturae contra el XSD oficial 3.2.2.
 
 Realiza validación estructural y, si el XSD está disponible en
-specs/facturae/, también validación de esquema completa.
+resources/facturae/, también validación de esquema completa.
 
 | Parameter | Type | Required | Default | Description |
 |---|---|---|---|---|
@@ -308,7 +308,7 @@ specs/facturae/, también validación de esquema completa.
 Valida un registro VERI*FACTU XML.
 
 Realiza validación estructural y, si el XSD v1.0 (HAC/1177/2024) está
-disponible en specs/verifactu/, también validación de esquema.
+disponible en resources/verifactu/, también validación de esquema.
 
 | Parameter | Type | Required | Default | Description |
 |---|---|---|---|---|

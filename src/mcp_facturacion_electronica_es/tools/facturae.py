@@ -2,7 +2,8 @@
 
 Facturae 3.2.2:
     Namespace: http://www.facturae.gob.es/formato/Versiones/Facturaev3_2_2.xml
-    Schema:    specs/facturae/xsd/Facturaev3_2_2.xml
+    Schema:    bundled at runtime under resources/facturae/ (provenance:
+               specs/facturae/xsd/, see that directory's README)
     Source:    https://www.facturae.gob.es/formato/Versiones/Esquema_0_3_2_2_20200304.zip
 
 FACe integrator REST API:
@@ -29,6 +30,7 @@ import base64
 import hashlib
 import logging
 from decimal import Decimal
+from pathlib import Path
 from typing import Any
 
 from lxml import etree
@@ -64,6 +66,15 @@ logger = logging.getLogger(__name__)
 _FACTURAE_NS = "http://www.facturae.gob.es/formato/Versiones/Facturaev3_2_2.xml"
 _DS_NS = "http://www.w3.org/2000/09/xmldsig#"
 _XADES_NS = "http://uri.etsi.org/01903/v1.3.2#"
+
+# __file__ = src/mcp_facturacion_electronica_es/tools/facturae.py — two .parent
+# hops reach the package root, mcp_facturacion_electronica_es/. Moved from
+# repo-root specs/ into this package's own resources/ 2026-09-09 (CORE-1,
+# audit/2026-09-audit-core.md): the old three-hop path landed on src/ and
+# never resolved under any layout, checkout or installed — no XSD validation
+# has ever actually executed here.
+_RESOURCES_DIR = Path(__file__).resolve().parent.parent / "resources" / "facturae"
+_FACTURAEV3_2_2_XSD = _RESOURCES_DIR / "Facturaev3_2_2.xml"
 
 
 # ---------------------------------------------------------------------------
@@ -676,7 +687,7 @@ async def es__validate_facturae_schema(
     """Valida un XML Facturae contra el XSD oficial 3.2.2.
 
     Realiza validación estructural y, si el XSD está disponible en
-    specs/facturae/, también validación de esquema completa.
+    resources/facturae/, también validación de esquema completa.
 
     Args:
         xml: XML Facturae a validar.
@@ -722,29 +733,30 @@ async def es__validate_facturae_schema(
 
         # XSD validation — Facturaev3_2_2.xml uses .xml extension intentionally
         # (the targetNamespace URI itself ends in Facturaev3_2_2.xml)
-        import pathlib  # noqa: PLC0415
-
-        xsd_path = (
-            pathlib.Path(__file__).parent.parent.parent
-            / "specs"
-            / "facturae"
-            / "xsd"
-            / "Facturaev3_2_2.xml"
-        )
         validation_mode = "structural"
 
-        if xsd_path.exists():
+        if _FACTURAEV3_2_2_XSD.exists():
             try:
-                schema = etree.XMLSchema(etree.parse(str(xsd_path)))
+                schema = etree.XMLSchema(etree.parse(str(_FACTURAEV3_2_2_XSD)))
                 schema.validate(root)
                 for e in schema.error_log:
                     errors.append(f"[XSD] {e.message} (línea {e.line})")
                 validation_mode = "xsd"
             except Exception as exc:
+                # [Unverified] Facturaev3_2_2.xml itself <xs:import>s the W3C
+                # XML-DSig schema by absolute URL
+                # (http://www.w3.org/TR/xmldsig-core/xmldsig-core-schema.xsd),
+                # which is not bundled locally and does not resolve offline —
+                # confirmed 2026-09-09 that schema compilation currently fails
+                # for this reason (a `ds:Signature` element reference does not
+                # resolve). A local copy + core's XSDValidator known_imports
+                # resolver hook (v1.32.0, CORE-7 pattern) would fix this, but
+                # per project policy normative specs must be user-supplied,
+                # not agent-fetched — see roadmap-2026.md CORE-1-ES-DSIG.
                 warnings.append(f"XSD validation failed to run: {exc}")
         else:
             warnings.append(
-                "Validación XSD no disponible — specs/facturae/xsd/Facturaev3_2_2.xml "
+                "Validación XSD no disponible — resources/facturae/Facturaev3_2_2.xml "
                 "no encontrado. La validación estructural está activa."
             )
 

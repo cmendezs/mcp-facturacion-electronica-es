@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from pathlib import Path
 
 import pytest
 
@@ -380,22 +381,24 @@ async def test_handle_validate_verifactu_record_anulacion_no_false_positives() -
 
 
 def test_validate_verifactu_xsd_path_resolves_to_bundled_schema() -> None:
-    """Regression: the XSD path in es__validate_verifactu_record used
-    three .parent hops (landing on src/, one level short of the package
-    root), silently degrading every call to structural-only validation
-    forever. Four hops are required to reach specs/."""
-    import pathlib
-
+    """Regression (CORE-1): the module's own resolved XSD path must exist
+    inside the installed package (src/mcp_facturacion_electronica_es/), not
+    outside it. The old repo-root specs/ path silently degraded every call
+    to structural-only validation once pip-installed from a wheel, since
+    specs/ is not packaged."""
+    import mcp_facturacion_electronica_es as pkg
     import mcp_facturacion_electronica_es.tools.verifactu as verifactu_module
 
-    xsd_path = (
-        pathlib.Path(verifactu_module.__file__).parent.parent.parent.parent
-        / "specs"
-        / "verifactu"
-        / "xsd"
-        / "SuministroLR.xsd"
+    package_root = Path(pkg.__file__).resolve().parent
+    assert verifactu_module._SUMINISTRO_LR_XSD.exists(), (
+        f"expected bundled XSD at {verifactu_module._SUMINISTRO_LR_XSD}"
     )
-    assert xsd_path.exists(), f"expected bundled XSD at {xsd_path}"
+    assert verifactu_module._SUMINISTRO_LR_XSD.resolve().is_relative_to(package_root), (
+        "XSD path resolves outside the installed package — CORE-1 regression"
+    )
+    # SuministroLR.xsd <import>s SuministroInformacion.xsd by relative
+    # schemaLocation — it must stay co-located for that to resolve.
+    assert (verifactu_module._RESOURCES_DIR / "SuministroInformacion.xsd").exists()
 
 
 # ---------------------------------------------------------------------------
@@ -555,6 +558,12 @@ async def test_handle_validate_verifactu_record_valid(minimal_verifactu_xml) -> 
     assert "error" not in data
     assert data["valid"] is True
     assert data["errors"] == []
+    # Pinned to today's known state, not the desired one: XSD compilation
+    # currently fails (missing local W3C xmldsig-core-schema.xsd import — see
+    # the warning comment in tools/verifactu.py), so this still falls back to
+    # structural-only. Once that gap is closed this should flip to "xsd" —
+    # if it does, update this assertion rather than treating it as a failure.
+    assert data["validation_mode"] == "structural"
 
 
 @pytest.mark.asyncio
