@@ -41,6 +41,43 @@ mcp-publisher publish
 
 ## Changelog
 
+### [0.9.0] - 2026-09-09
+
+Core audit Step 3 item 2 (`audit/2026-09-audit-core.md`): CORE-1 (BLOCKING) packaging fix,
+two instances.
+
+#### Fixed
+- **CORE-1** — `tools/verifactu.py`'s `SuministroLR.xsd` path used four `.parent` hops
+  landing at repo-root `specs/`, which broke once pip-installed from a wheel (the instance
+  the audit originally flagged). Moved the schema, and its sibling
+  `SuministroInformacion.xsd` (needed via a relative `schemaLocation` import), into
+  `src/mcp_facturacion_electronica_es/resources/verifactu/`.
+- **CORE-1** (independently discovered during this fix) — `tools/facturae.py`'s
+  `Facturaev3_2_2.xml` path used only three `.parent` hops, landing on `src/` itself. This
+  never resolved under any layout, checkout or installed, so XSD-mode validation has never
+  actually executed for this tool. Moved into
+  `src/mcp_facturacion_electronica_es/resources/facturae/`.
+
+#### Added
+- Core CHECK 7 (`run_check_resource_paths`, core v1.32.0) wired into `audit/audit_vs_core.py`
+  to guard against this bug class regressing.
+- Regression tests for both validators asserting the module's own resolved XSD path stays
+  inside the installed package (the verifactu one replaces a prior test that only re-derived
+  the old buggy path and would have kept passing regardless of the actual bug).
+
+#### Documented, not fixed
+- Both validators' underlying XSD schemas `<import>` the W3C xmldsig-core schema by absolute
+  URL, which is not bundled locally and does not resolve offline, so XSD-mode validation
+  still falls back to structural-only even after this fix. Per project policy normative
+  specs must be user-supplied, not agent-fetched. Documented in `README.md`/`README.es.md`/
+  `docs/TOOLS.md` and pinned by two test assertions.
+
+#### Changed
+- `mcp-einvoicing-core` floor pin bumped to `>=1.32.0,<2.0.0`.
+
+149 tests passing / 4 skipped, ruff clean, audit gate PASS 0 blocking / 12 warnings
+(pre-existing, unrelated to this release).
+
 ### [0.8.0] - 2026-08-22
 
 ARCH-CONVERGE-ES: server-wiring convergence to `EInvoicingMCPServer`, the fourth and final
