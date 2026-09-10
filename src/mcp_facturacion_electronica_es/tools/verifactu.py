@@ -47,6 +47,7 @@ from urllib.parse import quote_plus
 from lxml import etree
 from mcp_einvoicing_core.base_server import assert_not_read_only
 from mcp_einvoicing_core.confirmation import ConfirmationGate
+from mcp_einvoicing_core.endpoints import EndpointEnvironment
 from mcp_einvoicing_core.exceptions import EInvoicingError
 from mcp_einvoicing_core.models import InvoiceDocument
 from mcp_einvoicing_core.qr import generate_qr_png_base64
@@ -924,7 +925,7 @@ async def es__submit_verifactu_to_aeat(
             )
 
         env = aeat_env()
-        base_url = VERIFACTU_ENDPOINTS[env]
+        base_url = VERIFACTU_ENDPOINTS.resolve(EndpointEnvironment(env))
         xml_bytes = xml.encode() if isinstance(xml, str) else xml
 
         if SignerClient.is_configured():
@@ -1037,7 +1038,7 @@ async def es__query_verifactu_status(
         )
 
         env = aeat_env()
-        base_url = VERIFACTU_CONSULTA_ENDPOINTS[env]
+        base_url = VERIFACTU_CONSULTA_ENDPOINTS.resolve(EndpointEnvironment(env))
 
         if SignerClient.is_configured():
             signer = SignerClient.from_env()
@@ -1138,7 +1139,7 @@ async def es__generate_qr_verifactu(
         fecha_es = fmt_date_es(invoice_date)
         importe = fmt_amount(Decimal(str(total_amount)))
 
-        qr_base_url = VERIFACTU_QR_ENDPOINTS[aeat_env()]
+        qr_base_url = VERIFACTU_QR_ENDPOINTS.resolve(EndpointEnvironment(aeat_env()))
         query = "&".join(
             f"{key}={quote_plus(str(value), safe='')}"
             for key, value in (

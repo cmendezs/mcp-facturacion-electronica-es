@@ -232,12 +232,12 @@ async def test_handle_parse_aeat_response_invalid_xml() -> None:
 def test_face_base_urls_verified() -> None:
     from mcp_facturacion_electronica_es._helpers import FACE_BASE_URLS
 
-    assert "sandbox" in FACE_BASE_URLS
-    assert "production" in FACE_BASE_URLS
-    assert "face" in FACE_BASE_URLS["sandbox"].lower()
-    assert "face" in FACE_BASE_URLS["production"].lower()
-    assert FACE_BASE_URLS["sandbox"] == "https://se-api-face.redsara.es"
-    assert FACE_BASE_URLS["production"] == "https://api.face.gob.es"
+    assert FACE_BASE_URLS.sandbox is not None
+    assert FACE_BASE_URLS.production is not None
+    assert "face" in FACE_BASE_URLS.sandbox.lower()
+    assert "face" in FACE_BASE_URLS.production.lower()
+    assert FACE_BASE_URLS.sandbox == "https://se-api-face.redsara.es"
+    assert FACE_BASE_URLS.production == "https://api.face.gob.es"
 
 
 def test_sii_endpoints_match_bundled_wsdl() -> None:
@@ -251,23 +251,23 @@ def test_sii_endpoints_match_bundled_wsdl() -> None:
         SII_RECEIVED_ENDPOINTS,
     )
 
-    assert SII_ISSUED_ENDPOINTS["production"]["primary"] == (
+    assert SII_ISSUED_ENDPOINTS["primary"].production == (
         "https://www1.agenciatributaria.gob.es/wlpl/SSII-FACT/ws/fe/SiiFactFEV1SOAP"
     )
-    assert SII_ISSUED_ENDPOINTS["production"]["sello"] == (
+    assert SII_ISSUED_ENDPOINTS["sello"].production == (
         "https://www10.agenciatributaria.gob.es/wlpl/SSII-FACT/ws/fe/SiiFactFEV1SOAP"
     )
-    assert SII_ISSUED_ENDPOINTS["sandbox"]["primary"] == (
+    assert SII_ISSUED_ENDPOINTS["primary"].sandbox == (
         "https://prewww1.aeat.es/wlpl/SSII-FACT/ws/fe/SiiFactFEV1SOAP"
     )
-    assert SII_RECEIVED_ENDPOINTS["production"]["primary"] == (
+    assert SII_RECEIVED_ENDPOINTS["primary"].production == (
         "https://www1.agenciatributaria.gob.es/wlpl/SSII-FACT/ws/fr/SiiFactFRV1SOAP"
     )
-    assert SII_RECEIVED_ENDPOINTS["sandbox"]["primary"] == (
+    assert SII_RECEIVED_ENDPOINTS["primary"].sandbox == (
         "https://prewww1.aeat.es/wlpl/SSII-FACT/ws/fr/SiiFactFRV1SOAP"
     )
-    for env in ("sandbox", "production"):
-        assert "primary" in SII_ISSUED_ENDPOINTS[env]
-        assert "sello" in SII_ISSUED_ENDPOINTS[env]
-        assert "primary" in SII_RECEIVED_ENDPOINTS[env]
-        assert "sello" in SII_RECEIVED_ENDPOINTS[env]
+    for key in ("primary", "sello"):
+        assert SII_ISSUED_ENDPOINTS[key].sandbox is not None
+        assert SII_ISSUED_ENDPOINTS[key].production is not None
+        assert SII_RECEIVED_ENDPOINTS[key].sandbox is not None
+        assert SII_RECEIVED_ENDPOINTS[key].production is not None

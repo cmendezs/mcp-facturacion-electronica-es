@@ -8,9 +8,9 @@ from __future__ import annotations
 import logging
 import os
 from decimal import ROUND_HALF_UP, Decimal
-from types import MappingProxyType
 from typing import Any
 
+from mcp_einvoicing_core.endpoints import EndpointSet
 from mcp_einvoicing_core.exceptions import EInvoicingError
 from mcp_einvoicing_core.models import InvoiceDocument, TaxIdentifier
 
@@ -113,7 +113,7 @@ def face_env() -> str:
 # AEAT endpoint registry
 # ---------------------------------------------------------------------------
 
-#: VERI*FACTU submission endpoints (immutable — MappingProxyType prevents runtime mutation).
+#: VERI*FACTU submission endpoints.
 #: Source: specs/verifactu/schemas/SistemaFacturacion.wsdl, binding "sfVerifactu",
 #: port "SistemaVerifactu" (production, personal cert) / "SistemaVerifactuPruebas"
 #: (sandbox, personal cert). The soap:address is confirmed directly from the
@@ -121,14 +121,11 @@ def face_env() -> str:
 #: each environment also exists at the same path on host www10/prewww10 — see
 #: VERIFACTU_SELLO_ENDPOINTS below; it is a different certificate type, not a
 #: failover secondary.
-VERIFACTU_ENDPOINTS: MappingProxyType[str, str] = MappingProxyType(
-    {
-        "sandbox": ("https://prewww1.aeat.es/wlpl/TIKE-CONT/ws/SistemaFacturacion/VerifactuSOAP"),
-        "production": (
-            "https://www1.agenciatributaria.gob.es"
-            "/wlpl/TIKE-CONT/ws/SistemaFacturacion/VerifactuSOAP"
-        ),
-    }
+VERIFACTU_ENDPOINTS = EndpointSet(
+    sandbox="https://prewww1.aeat.es/wlpl/TIKE-CONT/ws/SistemaFacturacion/VerifactuSOAP",
+    production=(
+        "https://www1.agenciatributaria.gob.es/wlpl/TIKE-CONT/ws/SistemaFacturacion/VerifactuSOAP"
+    ),
 )
 
 #: VERI*FACTU endpoints for callers authenticating with a Sello (company seal)
@@ -136,14 +133,11 @@ VERIFACTU_ENDPOINTS: MappingProxyType[str, str] = MappingProxyType(
 #: as VERIFACTU_ENDPOINTS, different host (www10/prewww10 vs. www1/prewww1).
 #: Source: specs/verifactu/schemas/SistemaFacturacion.wsdl, ports
 #: "SistemaVerifactuSello" / "SistemaVerifactuSelloPruebas".
-VERIFACTU_SELLO_ENDPOINTS: MappingProxyType[str, str] = MappingProxyType(
-    {
-        "sandbox": ("https://prewww10.aeat.es/wlpl/TIKE-CONT/ws/SistemaFacturacion/VerifactuSOAP"),
-        "production": (
-            "https://www10.agenciatributaria.gob.es"
-            "/wlpl/TIKE-CONT/ws/SistemaFacturacion/VerifactuSOAP"
-        ),
-    }
+VERIFACTU_SELLO_ENDPOINTS = EndpointSet(
+    sandbox="https://prewww10.aeat.es/wlpl/TIKE-CONT/ws/SistemaFacturacion/VerifactuSOAP",
+    production=(
+        "https://www10.agenciatributaria.gob.es/wlpl/TIKE-CONT/ws/SistemaFacturacion/VerifactuSOAP"
+    ),
 )
 
 #: VERI*FACTU consulta (ConsultaFactuSistemaFacturacion) endpoint.
@@ -152,20 +146,18 @@ VERIFACTU_SELLO_ENDPOINTS: MappingProxyType[str, str] = MappingProxyType(
 #: binding, so they share the identical soap:address as VERIFACTU_ENDPOINTS —
 #: there is no separate "/ConsultaLR" path on the live service (ConsultaLR.xsd
 #: is only the request *schema*, not a distinct endpoint).
-VERIFACTU_CONSULTA_ENDPOINTS: MappingProxyType[str, str] = VERIFACTU_ENDPOINTS
+VERIFACTU_CONSULTA_ENDPOINTS = VERIFACTU_ENDPOINTS
 
 #: VERI*FACTU QR-code verification service ("cotejo") endpoints — a separate
 #: REST-style service from the SOAP submission/consulta endpoints above, on a
 #: different host (www2/prewww2). Source:
 #: specs/verifactu/documentation/DetalleEspecificacTecnCodigoQRfactura.pdf s5.
-VERIFACTU_QR_ENDPOINTS: MappingProxyType[str, str] = MappingProxyType(
-    {
-        "sandbox": "https://prewww2.aeat.es/wlpl/TIKE-CONT/ValidarQR",
-        "production": "https://www2.agenciatributaria.gob.es/wlpl/TIKE-CONT/ValidarQR",
-    }
+VERIFACTU_QR_ENDPOINTS = EndpointSet(
+    sandbox="https://prewww2.aeat.es/wlpl/TIKE-CONT/ValidarQR",
+    production="https://www2.agenciatributaria.gob.es/wlpl/TIKE-CONT/ValidarQR",
 )
 
-#: SII issued-invoice submission endpoints (immutable).
+#: SII issued-invoice submission endpoints, keyed by certificate type.
 #: Each environment exposes a "primary" (personal certificate) host and a
 #: "sello" (company seal certificate, Certificado de Sello Electrónico) host
 #: for the *same* operation — not a primary/secondary failover pair. Confirmed
@@ -176,52 +168,38 @@ VERIFACTU_QR_ENDPOINTS: MappingProxyType[str, str] = MappingProxyType(
 #: sii.py only ever reads ["primary"]; "sello" is not yet wired up as a
 #: caller-selectable auth path.
 #: Source: specs/sii/schemas/SuministroFactEmitidas.wsdl (wsdl:port names)
-SII_ISSUED_ENDPOINTS: MappingProxyType[str, MappingProxyType[str, str]] = MappingProxyType(
-    {
-        "sandbox": MappingProxyType(
-            {
-                "primary": "https://prewww1.aeat.es/wlpl/SSII-FACT/ws/fe/SiiFactFEV1SOAP",
-                "sello": "https://prewww10.aeat.es/wlpl/SSII-FACT/ws/fe/SiiFactFEV1SOAP",
-            }
-        ),
-        "production": MappingProxyType(
-            {
-                "primary": "https://www1.agenciatributaria.gob.es/wlpl/SSII-FACT/ws/fe/SiiFactFEV1SOAP",
-                "sello": "https://www10.agenciatributaria.gob.es/wlpl/SSII-FACT/ws/fe/SiiFactFEV1SOAP",
-            }
-        ),
-    }
-)
+SII_ISSUED_ENDPOINTS: dict[str, EndpointSet] = {
+    "primary": EndpointSet(
+        sandbox="https://prewww1.aeat.es/wlpl/SSII-FACT/ws/fe/SiiFactFEV1SOAP",
+        production="https://www1.agenciatributaria.gob.es/wlpl/SSII-FACT/ws/fe/SiiFactFEV1SOAP",
+    ),
+    "sello": EndpointSet(
+        sandbox="https://prewww10.aeat.es/wlpl/SSII-FACT/ws/fe/SiiFactFEV1SOAP",
+        production="https://www10.agenciatributaria.gob.es/wlpl/SSII-FACT/ws/fe/SiiFactFEV1SOAP",
+    ),
+}
 
-#: SII received-invoice submission endpoints (immutable).
+#: SII received-invoice submission endpoints, keyed by certificate type.
 #: "primary"/"sello" distinction as above — confirmed from
 #: "SuministroFactRecibidas" (www1) vs. "SuministroFactRecibidasSello"
 #: (www10) in the bundled WSDL.
 #: Source: specs/sii/schemas/SuministroFactRecibidas.wsdl (wsdl:port names)
-SII_RECEIVED_ENDPOINTS: MappingProxyType[str, MappingProxyType[str, str]] = MappingProxyType(
-    {
-        "sandbox": MappingProxyType(
-            {
-                "primary": "https://prewww1.aeat.es/wlpl/SSII-FACT/ws/fr/SiiFactFRV1SOAP",
-                "sello": "https://prewww10.aeat.es/wlpl/SSII-FACT/ws/fr/SiiFactFRV1SOAP",
-            }
-        ),
-        "production": MappingProxyType(
-            {
-                "primary": "https://www1.agenciatributaria.gob.es/wlpl/SSII-FACT/ws/fr/SiiFactFRV1SOAP",
-                "sello": "https://www10.agenciatributaria.gob.es/wlpl/SSII-FACT/ws/fr/SiiFactFRV1SOAP",
-            }
-        ),
-    }
-)
+SII_RECEIVED_ENDPOINTS: dict[str, EndpointSet] = {
+    "primary": EndpointSet(
+        sandbox="https://prewww1.aeat.es/wlpl/SSII-FACT/ws/fr/SiiFactFRV1SOAP",
+        production="https://www1.agenciatributaria.gob.es/wlpl/SSII-FACT/ws/fr/SiiFactFRV1SOAP",
+    ),
+    "sello": EndpointSet(
+        sandbox="https://prewww10.aeat.es/wlpl/SSII-FACT/ws/fr/SiiFactFRV1SOAP",
+        production="https://www10.agenciatributaria.gob.es/wlpl/SSII-FACT/ws/fr/SiiFactFRV1SOAP",
+    ),
+}
 
-#: FACe integrator REST API base URLs (immutable).
+#: FACe integrator REST API base URLs.
 #: Source: specs/facturae/documentation/FACe-manual-api-integradores.pdf section 2.2
-FACE_BASE_URLS: MappingProxyType[str, str] = MappingProxyType(
-    {
-        "sandbox": "https://se-api-face.redsara.es",
-        "production": "https://api.face.gob.es",
-    }
+FACE_BASE_URLS = EndpointSet(
+    sandbox="https://se-api-face.redsara.es",
+    production="https://api.face.gob.es",
 )
 
 # ---------------------------------------------------------------------------

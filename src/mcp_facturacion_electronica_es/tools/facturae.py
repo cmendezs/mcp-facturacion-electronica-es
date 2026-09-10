@@ -41,6 +41,7 @@ from mcp_einvoicing_core.digital_signature import (
     XAdESSignerConfig,
     load_certificate_der,
 )
+from mcp_einvoicing_core.endpoints import EndpointEnvironment
 from mcp_einvoicing_core.exceptions import EInvoicingError
 from mcp_einvoicing_core.http_client import AuthMode, BaseEInvoicingClient, JWSConfig
 from mcp_einvoicing_core.models import InvoiceDocument
@@ -611,7 +612,7 @@ async def es__submit_to_face(
             )
 
         env = face_env()
-        base_url = FACE_BASE_URLS[env]
+        base_url = FACE_BASE_URLS.resolve(EndpointEnvironment(env))
         client = _build_face_client(base_url)
 
         xml_bytes = xml.encode() if isinstance(xml, str) else xml
@@ -650,7 +651,7 @@ async def es__get_face_invoice_status(invoice_id: str) -> dict[str, Any]:
             return err("invoice_id is required", "MISSING_PARAM")
 
         env = face_env()
-        base_url = FACE_BASE_URLS[env]
+        base_url = FACE_BASE_URLS.resolve(EndpointEnvironment(env))
         client = _build_face_client(base_url)
 
         response = await client._request("GET", f"/facturas/{invoice_id}")

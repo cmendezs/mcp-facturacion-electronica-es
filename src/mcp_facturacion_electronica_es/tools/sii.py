@@ -18,6 +18,7 @@ from typing import Any
 from lxml import etree
 from mcp_einvoicing_core.base_server import assert_not_read_only
 from mcp_einvoicing_core.confirmation import ConfirmationGate
+from mcp_einvoicing_core.endpoints import EndpointEnvironment
 from mcp_einvoicing_core.exceptions import EInvoicingError
 from mcp_einvoicing_core.models import InvoiceDocument
 from mcp_einvoicing_core.signer_client import SignerClient
@@ -488,7 +489,7 @@ async def es__submit_sii_batch(
             if record_type_enum == SIIRecordType.issued
             else SII_RECEIVED_ENDPOINTS
         )
-        base_url = endpoints[env]["primary"]
+        base_url = endpoints["primary"].resolve(EndpointEnvironment(env))
 
         use_signer = SignerClient.is_configured()
         if use_signer:
@@ -697,7 +698,7 @@ async def es__query_sii_status(
         )
         cert_password = aeat_settings.certificate_password
         client = BaseEInvoicingClient(
-            base_url=endpoints[env]["primary"],
+            base_url=endpoints["primary"].resolve(EndpointEnvironment(env)),
             auth_mode=AuthMode.MTLS,
             cert_path=cert_path,
             cert_password=cert_password,
