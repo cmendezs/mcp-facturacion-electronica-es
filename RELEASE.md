@@ -41,6 +41,18 @@ mcp-publisher publish
 
 ## Changelog
 
+### [0.10.0] - 2026-09-10
+
+Core audit Step 9 (optional, `audit/2026-09-audit-core.md`): CORE-5 endpoint routing adoption.
+Country-side only; core unchanged.
+
+#### Changed
+- The six package-local `MappingProxyType` endpoint tables (VERI*FACTU, VERI*FACTU Sello, QR
+  cotejo, SII issued/received x2 cert types, FACe) replaced with
+  `mcp_einvoicing_core.endpoints.EndpointSet`/`EndpointEnvironment`, the same abstraction PL,
+  IT, and BR now share. Call sites in `verifactu.py`, `sii.py`, and `facturae.py` updated
+  accordingly. No behavior change to resolved URLs.
+
 ### [0.9.0] - 2026-09-09
 
 Core audit Step 3 item 2 (`audit/2026-09-audit-core.md`): CORE-1 (BLOCKING) packaging fix,
