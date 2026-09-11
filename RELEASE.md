@@ -43,8 +43,8 @@ mcp-publisher publish
 
 ### [0.10.0] - 2026-09-10
 
-Core audit Step 9 (optional, `audit/2026-09-audit-core.md`): CORE-5 endpoint routing adoption.
-Country-side only; core unchanged.
+Core audit Step 9 (optional): CORE-5 endpoint routing adoption. Country-side only; core
+unchanged.
 
 #### Changed
 - The six package-local `MappingProxyType` endpoint tables (VERI*FACTU, VERI*FACTU Sello, QR
@@ -55,8 +55,7 @@ Country-side only; core unchanged.
 
 ### [0.9.0] - 2026-09-09
 
-Core audit Step 3 item 2 (`audit/2026-09-audit-core.md`): CORE-1 (BLOCKING) packaging fix,
-two instances.
+Core audit Step 3 item 2: CORE-1 (BLOCKING) packaging fix, two instances.
 
 #### Fixed
 - **CORE-1** — `tools/verifactu.py`'s `SuministroLR.xsd` path used four `.parent` hops

@@ -1,7 +1,7 @@
 # mcp-facturacion-electronica-es — Runtime resources (shipped in the wheel)
 
 XSD schemas this package loads at import/call time. Moved here from the repo-root `specs/`
-directory 2026-09-09 (CORE-1, `audit/2026-09-audit-core.md`): the previous locations resolved
+directory 2026-09-09 (CORE-1): the previous locations resolved
 outside the installed package once pip-installed from a wheel (or, for `facturae/`, resolved
 incorrectly even in a source checkout — see below), since only
 `src/mcp_facturacion_electronica_es/` is packaged

@@ -117,6 +117,5 @@ Avanzada**, consistent with the existing `AuthMode.MTLS` usage in
 The user confirmed the huella serialization is the **keyed** `campo=valor&`
 form (section 1 above), including both `CuotaTotal` and `ImporteTotal`, prior
 hash immediately before the timestamp, and an empty `Huella=` value for the
-genesis record. This resolved the ambiguity flagged in ES-SC-10 / ES-SC-11 of
-`audit/2026-07-audit-es.md`, where the pre-fix implementation joined raw
-values (no `campo=` keys) and omitted `ImporteTotal`.
+genesis record. This resolved the ambiguity flagged in ES-SC-10 / ES-SC-11, where the pre-fix
+implementation joined raw values (no `campo=` keys) and omitted `ImporteTotal`.

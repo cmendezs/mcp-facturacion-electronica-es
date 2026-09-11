@@ -94,8 +94,8 @@ _SOFTWARE_ID_CODE = "ES"
 
 # __file__ = src/mcp_facturacion_electronica_es/tools/verifactu.py — two .parent
 # hops reach the package root, mcp_facturacion_electronica_es/. Moved from
-# repo-root specs/ into this package's own resources/ 2026-09-09 (CORE-1,
-# audit/2026-09-audit-core.md): the old four-hop path resolved outside the
+# repo-root specs/ into this package's own resources/ 2026-09-09 (CORE-1):
+# the old four-hop path resolved outside the
 # installed package once pip-installed from a wheel, silently degrading every
 # call to structural-only validation. SuministroInformacion.xsd must stay
 # alongside it — SuministroLR.xsd `<import>`s it by relative schemaLocation.
@@ -859,7 +859,7 @@ async def es__validate_verifactu_record(
                 # resolve). A local copy + core's XSDValidator known_imports
                 # resolver hook (v1.32.0, CORE-7 pattern) would fix this, but
                 # per project policy normative specs must be user-supplied,
-                # not agent-fetched — see roadmap-2026.md CORE-1-ES-DSIG.
+                # not agent-fetched (tracked as CORE-1-ES-DSIG).
                 warnings.append(f"XSD validation failed to run: {exc}")
         else:
             warnings.append(

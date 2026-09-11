@@ -15,7 +15,7 @@ Ley 18/2022 'Crea y Crece', developed by RD 238/2026 (BOE-A-2026-7295, published
     technical package (XSD/WSDL/API, UBL usage terms, unique-code insertion —
     Disp. final tercera). Effective-application dates (Disp. final cuarta) are
     12/24 months after the OM's own entry into force, not fixed calendar dates.
-    See `context-library/countries/es.md` "B2B mandate (Crea y Crece)" (root repo).
+    See the package's own compliance reference, "B2B mandate (Crea y Crece)".
 
 Mutual exclusion (Royal Decree 254/2025):
     SII-enrolled taxpayers are exempt from VERI*FACTU.

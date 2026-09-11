@@ -70,8 +70,8 @@ _XADES_NS = "http://uri.etsi.org/01903/v1.3.2#"
 
 # __file__ = src/mcp_facturacion_electronica_es/tools/facturae.py — two .parent
 # hops reach the package root, mcp_facturacion_electronica_es/. Moved from
-# repo-root specs/ into this package's own resources/ 2026-09-09 (CORE-1,
-# audit/2026-09-audit-core.md): the old three-hop path landed on src/ and
+# repo-root specs/ into this package's own resources/ 2026-09-09 (CORE-1):
+# the old three-hop path landed on src/ and
 # never resolved under any layout, checkout or installed — no XSD validation
 # has ever actually executed here.
 _RESOURCES_DIR = Path(__file__).resolve().parent.parent / "resources" / "facturae"
@@ -753,7 +753,7 @@ async def es__validate_facturae_schema(
                 # resolve). A local copy + core's XSDValidator known_imports
                 # resolver hook (v1.32.0, CORE-7 pattern) would fix this, but
                 # per project policy normative specs must be user-supplied,
-                # not agent-fetched — see roadmap-2026.md CORE-1-ES-DSIG.
+                # not agent-fetched (tracked as CORE-1-ES-DSIG).
                 warnings.append(f"XSD validation failed to run: {exc}")
         else:
             warnings.append(

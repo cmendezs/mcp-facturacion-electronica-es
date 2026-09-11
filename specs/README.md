@@ -32,7 +32,7 @@ specs/
 The two XSD schemas this package actually loads at call time —
 `facturae/xsd/Facturaev3_2_2.xml` and `verifactu/xsd/SuministroLR.xsd` — live under
 [`src/mcp_facturacion_electronica_es/resources/`](../src/mcp_facturacion_electronica_es/resources/),
-not here. Moved there 2026-09-09 (CORE-1, `audit/2026-09-audit-core.md`): the old repo-root
+not here. Moved there 2026-09-09 (CORE-1): the old repo-root
 paths either broke once pip-installed from a wheel (`verifactu`) or never resolved under any
 layout at all (`facturae`, found in the same pass). `specs/facturae/xsd/` and
 `specs/verifactu/xsd/` (the other files in it, e.g. `ConsultaLR.xsd`) remain reference-only —
@@ -58,7 +58,7 @@ see that directory's own README for the file-by-file mapping.
 | VeriFactu XSD bundle (7 files, `verifactu/xsd/`) | — | AEAT; byte-identical to the 2026-06-26 bundle already present, reconfirmed against the user-supplied 2026-08-09 copies |
 | VeriFactu signed RegistroAlta examples (`AnexosEjemplosFirmaRegFact.zip`) | — | AEAT, user-supplied 2026-08-09; not yet used by tests |
 | VeriFactu "declaración responsable" examples (`EjemplosDeclaracionResponsable(V0.5.1).pdf`), `DsRegistroVeriFactu.xlsx` | v0.5.1 | AEAT, user-supplied 2026-08-09; SIF-certification reference material, not used by this package's tools |
-| ~~VeriFactu technical reference (huella, QR, WSDL ops)~~ | `[Inference]`, 2026-08 | **Superseded 2026-08-09** by the official documents above. User-supplied transcription in `verifactu/documentation/verifactu-technical-reference.md`; two of its claims (RegistroAnulacion field names, WSDL operation names) turned out wrong when checked against the primary source — see the inline callouts in that file and ES-SC-10/11/ES-LC-8/9/10 in `context-library/audit-history.md`. |
+| ~~VeriFactu technical reference (huella, QR, WSDL ops)~~ | `[Inference]`, 2026-08 | **Superseded 2026-08-09** by the official documents above. User-supplied transcription in `verifactu/documentation/verifactu-technical-reference.md`; two of its claims (RegistroAnulacion field names, WSDL operation names) turned out wrong when checked against the primary source — see the inline callouts in that file (tracked as ES-SC-10/11/ES-LC-8/9/10). |
 | Ley Crea y Crece — BOE-A-2022-15818 | Ley 18/2022 | https://www.boe.es |
 
 ## Pending specs
