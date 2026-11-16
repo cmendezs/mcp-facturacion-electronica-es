@@ -24,7 +24,7 @@ specs/
 │   ├── xsd/                    Official XSD schemas (SuministroInformacion, ConsultaLR, etc.) — SuministroLR.xsd itself moved, see below
 │   └── examples/               Official signed RegistroAlta examples (AnexosEjemplosFirmaRegFact.zip)
 └── crea-y-crece/               Ley Crea y Crece — future B2B mandate (Ley 18/2022)
-    └── documentation/          BOE law text only; technical specs pending Ministerial Order
+    └── documentation/          BOE law texts: Ley 18/2022, RD 238/2026 (consolidated), Orden HAC/1028/2026 (BOE-A-2026-20587); the AEAT electronic-office technical specs are not yet supplied
 ```
 
 ## Runtime artifacts (shipped in the wheel)

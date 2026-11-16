@@ -604,8 +604,11 @@ la Ley 18/2022, desarrollada por el RD 238/2026 (BOE-A-2026-7295).
 ```
 
 > ⚠️ El RD 238/2026 confirma los formatos admitidos (EN 16931: CII/UBL/EDIFACT/Facturae;
-> esta herramienta implementa UBL y Facturae). La Orden Ministerial (Hacienda) que
-> desarrolla el paquete técnico de la solución pública (Disp. final tercera) sigue pendiente.
+> esta herramienta implementa UBL y Facturae). La Orden HAC/1028/2026 (BOE-A-2026-20587, en
+> vigor desde el 2026-10-06) regula la solución pública de facturación electrónica; este
+> generador aún no sigue su estructura UBL porque las especificaciones técnicas de la sede
+> electrónica de la AEAT siguen pendientes. `es__check_b2b_mandate_applicability` informa de
+> las fechas de aplicación (2027-10-06 para los obligados con más de 8 M€, 2028-10-06 para el resto).
 
 ---
 
@@ -740,8 +743,8 @@ FACe. El País Vasco aplica TicketBAI de forma independiente, con tres autoridad
 que mantienen cada una sus propios esquemas XSD y endpoints. Navarra opera NaTicket. La Ley
 Crea y Crece exige la facturación electrónica B2B para todas las empresas; el RD 238/2026
 (BOE-A-2026-7295) confirma los formatos admitidos (EN 16931: CII/UBL/EDIFACT/Facturae),
-mientras que la Orden Ministerial que desarrolla el paquete técnico de la solución pública
-sigue pendiente. La detección del régimen a partir del domicilio
+y la Orden HAC/1028/2026 regula la solución pública de facturación electrónica
+(especificaciones técnicas de la AEAT pendientes). La detección del régimen a partir del domicilio
 fiscal y el volumen de operaciones es un requisito previo a todas las demás operaciones:
 utilice `es__detect_regional_regime` en primer lugar.
 

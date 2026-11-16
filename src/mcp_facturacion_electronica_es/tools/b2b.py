@@ -11,22 +11,28 @@ Ley 18/2022 'Crea y Crece', developed by RD 238/2026 (BOE-A-2026-7295, published
     Advanced electronic signature required (art. 7.3, per RD 1619/2012 art. 10.1.a).
     Unique invoice code required: issuer NIF + invoice number/series + issue date
     (art. 7.5) — exact insertion into the syntax is deferred to the OM below.
-    Still pending: the Orden Ministerial (Hacienda) developing the public-solution
-    technical package (XSD/WSDL/API, UBL usage terms, unique-code insertion —
-    Disp. final tercera). Effective-application dates (Disp. final cuarta) are
-    12/24 months after the OM's own entry into force, not fixed calendar dates.
+    Orden HAC/1028/2026 (BOE-A-2026-20587, published 2026-10-05, in force
+    2026-10-06) regulates the public e-invoicing solution: EN 16931 in UBL
+    (art. 3), faithful UBL copy with the "indicador de copia" (BT-ES-1,
+    cbc:CopyIndicator, art. 4), unique code = issuer NIF + series/number + issue
+    date (art. 6), no embedded files (arts. 3.6, 4.4), content in its Annex I.
+    Effective-application dates (RD 238/2026 Disp. final cuarta) run 12/24 months
+    from the order's entry into force. Still outstanding: the AEAT technical
+    specifications and volumetry, which the order places on the AEAT electronic
+    office (arts. 3.1, 4.2) and which this package has not seen.
     See the package's own compliance reference, "B2B mandate (Crea y Crece)".
 
 Mutual exclusion (Royal Decree 254/2025):
     SII-enrolled taxpayers are exempt from VERI*FACTU.
     Always call es__check_b2b_mandate_applicability before generating records.
 
-[NEED: verify Orden Ministerial (Hacienda) publication + effective dates]
+[NEED: AEAT electronic-office technical specifications (XSD, volumetry) for the public solution]
 """
 
 from __future__ import annotations
 
 import logging
+from datetime import date
 from decimal import Decimal
 from typing import Any
 
@@ -48,6 +54,21 @@ logger = logging.getLogger(__name__)
 # determines the 12- vs 24-month post-OM timeline. Distinct from the €6M SII threshold
 # in tools/utils.py — do not conflate the two.
 _B2B_MANDATE_TURNOVER_THRESHOLD_EUR = 8_000_000
+
+# Orden HAC/1028/2026 (BOE-A-2026-20587) — public e-invoicing solution. [Verified locally:
+# BOE núm. 247, 2026-10-05; Disposición final única: in force the day after publication.]
+_B2B_OM_REFERENCE = "Orden HAC/1028/2026 (BOE-A-2026-20587)"
+_B2B_OM_PUBLICATION_DATE = date(2026, 10, 5)
+_B2B_OM_ENTRY_INTO_FORCE = date(2026, 10, 6)
+
+
+def _add_months(start: date, months: int) -> date:
+    """Calendar-month offset (same day number; clamped to the month's last day)."""
+    total = start.month - 1 + months
+    year, month = start.year + total // 12, total % 12 + 1
+    last_day = (date(year + (month == 12), month % 12 + 1, 1) - date(year, month, 1)).days
+    return date(year, month, min(start.day, last_day))
+
 
 # UBL 2.1 namespaces
 _UBL_INVOICE_NS = "urn:oasis:names:specification:ubl:schema:xsd:Invoice-2"
@@ -216,8 +237,8 @@ async def es__generate_b2b_einvoice_es(
     """Genera una factura B2B conforme a EN 16931 en formato UBL 2.1 o Facturae 3.2.2.
 
     Según la Ley 18/2022 'Crea y Crece'. RD 238/2026 publicado; formatos
-    confirmados (EN 16931: CII/UBL/EDIFACT/Facturae). Orden Ministerial
-    (Hacienda) pendiente para la solución pública.
+    confirmados (EN 16931: CII/UBL/EDIFACT/Facturae). Orden HAC/1028/2026 regula la
+    solución pública; las especificaciones técnicas de la AEAT están pendientes.
 
     Args:
         invoice: Datos de la factura.
@@ -248,9 +269,13 @@ async def es__generate_b2b_einvoice_es(
                 "invoice_number": parsed_invoice.number,
                 "disclaimer": (
                     "RD 238/2026 publicado; formatos confirmados (EN 16931: CII/UBL/EDIFACT/"
-                    "Facturae). Orden Ministerial (Hacienda) pendiente para la solución pública "
-                    "(codificación única, condiciones de acceso). El formato definitivo de la "
-                    "copia fiel remitida a la solución pública será UBL (art. 6.2 RD 238/2026)."
+                    "Facturae). Orden HAC/1028/2026 (BOE-A-2026-20587) regula la solución "
+                    "pública: EN 16931 en sintaxis UBL, código único (NIF emisor + serie/número "
+                    "+ fecha) y contenido mínimo en su anexo I. Este generador no sigue aún la "
+                    "estructura UBL de la solución pública: las especificaciones técnicas y la "
+                    "volumetría de la AEAT (sede electrónica) están pendientes de contrastar "
+                    "[Unverified]. La copia fiel remitida a la solución pública será UBL "
+                    "(art. 6.2 RD 238/2026; art. 4 de la Orden)."
                 ),
             }
         )
@@ -337,16 +362,18 @@ async def es__check_b2b_mandate_applicability(
         # Facturae/FACe always applies for B2G
         applicable_systems.append("Facturae / FACe (obligatorio para facturas B2G desde 2015)")
 
-        # Crea y Crece — RD 238/2026 (BOE-A-2026-7295) confirms the format/signature/
-        # unique-code rules; the Orden Ministerial (Hacienda) for the public solution
-        # is still pending (Disp. final tercera).
+        # Crea y Crece — RD 238/2026 (BOE-A-2026-7295) plus Orden HAC/1028/2026
+        # (BOE-A-2026-20587), in force 2026-10-06, which starts the application clocks.
         applicable_systems.append(
-            "B2B Crea y Crece (Ley 18/2022 + RD 238/2026; solución pública pendiente "
-            "de Orden Ministerial)"
+            "B2B Crea y Crece (Ley 18/2022 + RD 238/2026 + Orden HAC/1028/2026; "
+            "especificaciones técnicas de la AEAT pendientes)"
         )
 
         turnover_exceeds_8m = float(turnover) > _B2B_MANDATE_TURNOVER_THRESHOLD_EUR
         b2b_months_after_om = 12 if turnover_exceeds_8m else 24
+        om_in_force = _B2B_OM_ENTRY_INTO_FORCE
+        over_8m_date = _add_months(om_in_force, 12)
+        other_date = _add_months(om_in_force, 24)
 
         return ok(
             {
@@ -361,20 +388,35 @@ async def es__check_b2b_mandate_applicability(
                 "b2b_syntaxes_confirmed": ["CII", "UBL", "EDIFACT", "Facturae"],
                 "b2b_syntaxes_implemented": ["UBL", "Facturae"],
                 "b2b_public_solution_pending": True,
+                "b2b_public_solution_order": _B2B_OM_REFERENCE,
+                "b2b_aeat_technical_specs_pending": True,
                 "b2b_format_note": (
                     "Sintaxis admitidas confirmadas por RD 238/2026 art. 7.1 (EN 16931: "
                     "CII/UBL/EDIFACT/Facturae); este paquete implementa UBL y Facturae. "
                     "UBL es obligatorio para la copia fiel a la solución pública cuando se "
                     "emite por plataforma privada (art. 6.2). Firma electrónica avanzada "
-                    "requerida (art. 7.3). Código único de factura requerido: NIF emisor + "
-                    "número/serie + fecha de expedición (art. 7.5); su inserción exacta en "
-                    "la sintaxis está pendiente de la Orden Ministerial "
-                    "[NEED: wire once OM confirms exact codification]."
+                    "requerida (art. 7.3). Código único de factura: concatenación de NIF "
+                    "emisor + serie/número + fecha de expedición (art. 7.5 RD 238/2026; "
+                    "art. 6 Orden HAC/1028/2026, contenido en su anexo I). Las facturas y "
+                    "copias fieles para la solución pública no pueden incorporar ficheros "
+                    "embebidos (arts. 3.6 y 4.4) y la copia fiel se marca con el indicador "
+                    "de copia (BT-ES-1). La codificación exacta en la sintaxis UBL depende de "
+                    "las especificaciones técnicas de la AEAT "
+                    "[NEED: AEAT electronic-office specifications, not yet supplied]."
                 ),
                 "b2b_mandate_timeline": {
-                    "basis": "RD 238/2026 Disp. final cuarta — offsets are relative to the "
-                    "Orden Ministerial's own entry into force, not fixed calendar dates.",
-                    "om_entry_into_force_date": "[Unverified]",
+                    "basis": "RD 238/2026 Disp. final cuarta — offsets run from the entry "
+                    "into force of Orden HAC/1028/2026 (published 2026-10-05, in force "
+                    "2026-10-06 per its Disp. final única).",
+                    "om_reference": _B2B_OM_REFERENCE,
+                    "om_publication_date": _B2B_OM_PUBLICATION_DATE.isoformat(),
+                    "om_entry_into_force_date": om_in_force.isoformat(),
+                    "this_taxpayer_application_date": (
+                        over_8m_date if turnover_exceeds_8m else other_date
+                    ).isoformat(),
+                    "over_8m_application_date": over_8m_date.isoformat(),
+                    "other_taxpayers_application_date": other_date.isoformat(),
+                    "platform_operator_application_date": over_8m_date.isoformat(),
                     "turnover_threshold_eur": _B2B_MANDATE_TURNOVER_THRESHOLD_EUR,
                     "this_taxpayer_months_after_om": b2b_months_after_om,
                     "over_8m_turnover_months_after_om": 12,
@@ -382,14 +424,20 @@ async def es__check_b2b_mandate_applicability(
                     "platform_operator_obligations_months_after_om": 12,
                     "note": (
                         "8M€ threshold (art. 121 Ley 37/1992) is distinct from the €6M SII "
-                        "threshold above — do not conflate. No absolute dates are computed "
-                        "until the OM publishes its entry-into-force date."
+                        "threshold above — do not conflate. Application dates are the "
+                        "entry-into-force date plus the calendar-month offset "
+                        "[Inference: whether the obligation applies on that day or the day "
+                        "after is not stated in the supplied texts]. Over-8M taxpayers must "
+                        "also attach a readable PDF for 12 months after their effective date "
+                        "unless the recipient accepts the original format (RD 238/2026 "
+                        "Disp. transitoria segunda); the PDF is not sent to the public "
+                        "solution."
                     ),
                 },
                 "disclaimer": (
                     "Según RD-ley 15/2025, RD 254/2025 y RD 238/2026. "
-                    "Sujeto a cambios por legislación posterior, en particular la Orden "
-                    "Ministerial pendiente de la disposición final tercera del RD 238/2026. "
+                    "Sujeto a cambios por legislación posterior, en particular las "
+                    "especificaciones técnicas de la AEAT para la solución pública. "
                     "No constituye asesoramiento jurídico ni fiscal."
                 ),
             }

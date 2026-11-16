@@ -593,8 +593,11 @@ per Ley 18/2022, developed by RD 238/2026 (BOE-A-2026-7295).
 ```
 
 > ⚠️ RD 238/2026 confirms the admitted formats (EN 16931: CII/UBL/EDIFACT/Facturae; this
-> tool implements UBL and Facturae). The Orden Ministerial (Hacienda) developing the
-> public-solution technical package (Disp. final tercera) is still pending.
+> tool implements UBL and Facturae). Orden HAC/1028/2026 (BOE-A-2026-20587, in force
+> 2026-10-06) regulates the public e-invoicing solution; this generator does not yet follow
+> its UBL structure because the AEAT electronic-office technical specifications are still
+> pending. `es__check_b2b_mandate_applicability` reports the application dates (2027-10-06 for
+> taxpayers above €8M, 2028-10-06 for all others).
 
 ---
 
@@ -728,8 +731,8 @@ covers all B2G invoicing through the FACe portal. The Basque Country applies Tic
 independently, with three provincial authorities each maintaining their own XSD schemas and
 endpoints. Navarre operates NaTicket. The Ley Crea y Crece mandates B2B e-invoicing for
 all businesses; RD 238/2026 (BOE-A-2026-7295) confirms the admitted formats (EN 16931:
-CII/UBL/EDIFACT/Facturae), while the Orden Ministerial developing the public-solution
-technical package is still pending. Regime detection
+CII/UBL/EDIFACT/Facturae), and Orden HAC/1028/2026 regulates the public e-invoicing
+solution (AEAT technical specifications still pending). Regime detection
 based on tax domicile and turnover is a prerequisite to all other operations: use
 `es__detect_regional_regime` first.
 

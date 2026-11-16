@@ -156,7 +156,6 @@ async def test_handle_get_compliance_status_basque_out_of_scope() -> None:
 
 @pytest.mark.asyncio
 async def test_handle_check_b2b_mandate_applicability_sii_exclusion() -> None:
-    import json
 
     from mcp_facturacion_electronica_es.tools.b2b import es__check_b2b_mandate_applicability
 
@@ -180,10 +179,14 @@ async def test_handle_check_b2b_mandate_applicability_sii_exclusion() -> None:
     assert timeline["this_taxpayer_months_after_om"] == 12
     assert timeline["over_8m_turnover_months_after_om"] == 12
     assert timeline["other_taxpayers_months_after_om"] == 24
-    assert timeline["om_entry_into_force_date"] == "[Unverified]"
-    # No absolute mandate dates should be emitted anywhere in the payload.
-    assert "2026-10" not in json.dumps(data)
-    assert "2027" not in json.dumps(data["b2b_mandate_timeline"])
+    # Orden HAC/1028/2026: published 2026-10-05, in force 2026-10-06 -> +12 / +24 months.
+    assert timeline["om_entry_into_force_date"] == "2026-10-06"
+    assert timeline["over_8m_application_date"] == "2027-10-06"
+    assert timeline["other_taxpayers_application_date"] == "2028-10-06"
+    assert timeline["this_taxpayer_application_date"] == "2027-10-06"
+    assert timeline["platform_operator_application_date"] == "2027-10-06"
+    assert data["b2b_public_solution_order"] == "Orden HAC/1028/2026 (BOE-A-2026-20587)"
+    assert data["b2b_aeat_technical_specs_pending"] is True
 
 
 @pytest.mark.asyncio
@@ -198,6 +201,18 @@ async def test_handle_check_b2b_mandate_applicability_below_8m_threshold() -> No
     )
     timeline = data["b2b_mandate_timeline"]
     assert timeline["this_taxpayer_months_after_om"] == 24
+    assert timeline["this_taxpayer_application_date"] == "2028-10-06"
+
+
+def test_add_months_clamps_to_month_end() -> None:
+    from datetime import date
+
+    from mcp_facturacion_electronica_es.tools.b2b import _add_months
+
+    assert _add_months(date(2026, 10, 6), 12) == date(2027, 10, 6)
+    assert _add_months(date(2026, 10, 6), 24) == date(2028, 10, 6)
+    assert _add_months(date(2026, 1, 31), 1) == date(2026, 2, 28)
+    assert _add_months(date(2025, 12, 15), 1) == date(2026, 1, 15)
 
 
 @pytest.mark.asyncio

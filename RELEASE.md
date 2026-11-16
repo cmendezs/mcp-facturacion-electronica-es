@@ -41,6 +41,12 @@ mcp-publisher publish
 
 ## Changelog
 
+### [0.10.2] - 2026-11-17
+#### Changed
+- `es__check_b2b_mandate_applicability` reports concrete Crea y Crece application dates from Orden HAC/1028/2026 (BOE-A-2026-20587, in force 2026-10-06): 2027-10-06 for taxpayers above 8 million euros and platform operators, 2028-10-06 for all others (calendar-month counting; whether the obligation applies that day or the next is not stated in the supplied texts). New output fields and updated notes cite the order: EN 16931 in UBL, unique code (issuer NIF + series/number + issue date), no embedded files, copy indicator.
+- The UBL generator is unchanged: the order's Annex I uses a UBL adaptation whose XSD sits on the AEAT electronic office, which is not bundled.
+- The order text is added to the reference specifications.
+
 ### [0.10.1] - 2026-09-12
 #### Changed
 - Lower-bound pin on `mcp-einvoicing-core` raised to `>=1.34.1` (was `>=1.32.0`). This package's own CI now runs `CHECK_PUBLIC_HYGIENE`, the pre-publish audit check that blocks accidental citations of the private orchestration repo.
