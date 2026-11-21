@@ -41,6 +41,14 @@ mcp-publisher publish
 
 ## Changelog
 
+### [0.11.0] - 2026-11-21
+#### Fixed
+- VeriFactu and Factura-e validation now runs against the full XSDs (W3C XML-DSig schema bundled and resolved locally); `validation_mode` is `xsd`.
+- Factura-e generator output corrected for namespaces, `InvoiceIssuerType` (`EM` default, `EU` alias), alpha-3 country codes and overseas addresses. VeriFactu generator output corrected for the `Cabecera` namespace, element names, `RegistroAnulacion` and record chaining.
+- `SistemaInformatico/Version` follows the package version. Stale TicketBAI/NaTicket descriptions and README sections removed.
+#### Changed
+- The UBL B2B generator follows Annex I of the Orden HAC/1028/2026 (BT-23 and BT-24 values, NIF/NIF-IVA party identification, postal address) and validates against OASIS UBL 2.5; new `is_copy` option (BT-ES-1).
+
 ### [0.10.2] - 2026-11-17
 #### Changed
 - `es__check_b2b_mandate_applicability` reports concrete Crea y Crece application dates from Orden HAC/1028/2026 (BOE-A-2026-20587, in force 2026-10-06): 2027-10-06 for taxpayers above 8 million euros and platform operators, 2028-10-06 for all others (calendar-month counting; whether the obligation applies that day or the next is not stated in the supplied texts). New output fields and updated notes cite the order: EN 16931 in UBL, unique code (issuer NIF + series/number + issue date), no embedded files, copy indicator.
