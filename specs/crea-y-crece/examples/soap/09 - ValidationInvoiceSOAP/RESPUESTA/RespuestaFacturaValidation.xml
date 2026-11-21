@@ -1,0 +1,63 @@
+<env:Envelope xmlns:env="http://www.w3.org/2003/05/soap-envelope">
+   <env:Header/>
+   <env:Body Id="Body">
+      <DocumentStatus xmlns="urn:oasis:names:specification:ubl:schema:xsd:DocumentStatus-2" xmlns:cac="urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2" xmlns:cbc="urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2" xmlns:ns3="urn:oasis:names:specification:ubl:schema:xsd:CommonExtensionComponents-2">
+         <cbc:ID>2026102311063514</cbc:ID>
+		 <cbc:IssueDate>2026-11-16</cbc:IssueDate>
+         <cac:DocumentResponse>
+            <cac:Response>
+               <cbc:ResponseCode>400</cbc:ResponseCode>
+               <cbc:Description>Todas las facturas han fallado</cbc:Description>
+            </cac:Response>
+            <cac:DocumentReference>
+               <cbc:ID>CLASEA00000182</cbc:ID>
+               <cbc:IssueDate>2026-10-05</cbc:IssueDate>
+               <cbc:DocumentStatusCode>SPFE-CORE-18</cbc:DocumentStatusCode>
+               <cbc:DocumentDescription>El valor del identificador de la cuenta de pago (BT-84) debe ser un IBAN válido: /Invoice/cac:PaymentMeans/cac:PayeeFinancialAccount/cbc:ID en la línea 1</cbc:DocumentDescription>
+               <cac:IssuerParty>
+                  <cac:PartyTaxScheme>
+                     <cbc:CompanyID>xxxx</cbc:CompanyID>
+                     <cac:TaxScheme/>
+                  </cac:PartyTaxScheme>
+               </cac:IssuerParty>
+            </cac:DocumentReference>
+            <cac:DocumentReference>
+               <cbc:ID>CLASEA00000182</cbc:ID>
+               <cbc:IssueDate>2026-10-05</cbc:IssueDate>
+               <cbc:DocumentStatusCode>SPFE-IDEN-02</cbc:DocumentStatusCode>
+               <cbc:DocumentDescription>El NIF tiene un formato erróneo. NIF:XXXX. NOMBRE_RAZON:aaa: /Invoice/cac:AccountingSupplierParty/cac:Party/cac:PartyTaxScheme/cbc:CompanyID</cbc:DocumentDescription>
+               <cac:IssuerParty>
+                  <cac:PartyTaxScheme>
+                     <cbc:CompanyID>xxxx</cbc:CompanyID>
+                     <cac:TaxScheme/>
+                  </cac:PartyTaxScheme>
+               </cac:IssuerParty>
+            </cac:DocumentReference>
+            <cac:DocumentReference>
+               <cbc:ID>CLASEA00000182</cbc:ID>
+               <cbc:IssueDate>2026-10-05</cbc:IssueDate>
+               <cbc:DocumentStatusCode>SPFE-IDEN-05</cbc:DocumentStatusCode>
+               <cbc:DocumentDescription>El NIF tiene un formato erróneo. NIF:YYYY. NOMBRE_RAZON:bbb: /Invoice/cac:AccountingCustomerParty/cac:Party/cac:PartyTaxScheme/cbc:CompanyID</cbc:DocumentDescription>
+               <cac:IssuerParty>
+                  <cac:PartyTaxScheme>
+                     <cbc:CompanyID>xxxx</cbc:CompanyID>
+                     <cac:TaxScheme/>
+                  </cac:PartyTaxScheme>
+               </cac:IssuerParty>
+            </cac:DocumentReference>
+            <cac:DocumentReference>
+               <cbc:ID>CLASEA00000182</cbc:ID>
+               <cbc:IssueDate>2026-10-05</cbc:IssueDate>
+               <cbc:DocumentStatusCode>SPFE-REPR-01</cbc:DocumentStatusCode>
+               <cbc:DocumentDescription>El titular del certificado debe ser ObligadoEmision, Colaborador Social, Apoderado o Sucesor.: /Invoice/cac:AccountingSupplierParty/cac:Party/cac:PartyTaxScheme/cbc:CompanyID</cbc:DocumentDescription>
+               <cac:IssuerParty>
+                  <cac:PartyTaxScheme>
+                     <cbc:CompanyID>xxxx</cbc:CompanyID>
+                     <cac:TaxScheme/>
+                  </cac:PartyTaxScheme>
+               </cac:IssuerParty>
+            </cac:DocumentReference>
+         </cac:DocumentResponse>
+      </DocumentStatus>
+   </env:Body>
+</env:Envelope>

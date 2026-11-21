@@ -23,8 +23,11 @@ specs/
 │   ├── schemas/                Official WSDL (SistemaFacturacion.wsdl)
 │   ├── xsd/                    Official XSD schemas (SuministroInformacion, ConsultaLR, etc.) — SuministroLR.xsd itself moved, see below
 │   └── examples/               Official signed RegistroAlta examples (AnexosEjemplosFirmaRegFact.zip)
-└── crea-y-crece/               Ley Crea y Crece — future B2B mandate (Ley 18/2022)
-    └── documentation/          BOE law texts: Ley 18/2022, RD 238/2026 (consolidated), Orden HAC/1028/2026 (BOE-A-2026-20587); the AEAT electronic-office technical specs are not yet supplied
+├── xmldsig/                    W3C XML Signature schemas (xmldsig-core, xmldsig1, xmldsig11, xmldsig2); xmldsig-core is the import target of the VeriFactu and Facturae XSDs
+└── crea-y-crece/               Ley Crea y Crece — B2B mandate (Ley 18/2022)
+    ├── documentation/          BOE law texts (Ley 18/2022, RD 238/2026, Orden HAC/1028/2026 incl. consolidated text), Orden Annexes I and II (A1, A2), OASIS UBL 2.5 specification (UBL-2.5.pdf / .xml, no XSDs), AEAT SPFE technical documents (Formatos de Entrada y Salida v0.1.2, Catalogo de Servicios v0.1.5, Validaciones v0.1.0) and business rules for Annexes I and II
+    ├── schemas/PRE/            AEAT SPFE pre-production WSDLs (nine services, ebMS 3.0 over SOAP 1.2), ebMS/SOAP/xml XSDs, JAXB bindings, and the OASIS UBL 2.5 XSDs (xsd/ubl-2.5/common and maindoc, from os-UBL-2.5, 2026-08-12) that they import
+    └── examples/               AEAT sample UBL invoice (factura.xml) and SOAP/ebXML request and response samples for the nine SPFE services (soap/)
 ```
 
 ## Runtime artifacts (shipped in the wheel)

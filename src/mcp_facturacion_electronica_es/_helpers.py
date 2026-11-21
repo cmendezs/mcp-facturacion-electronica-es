@@ -8,13 +8,39 @@ from __future__ import annotations
 import logging
 import os
 from decimal import ROUND_HALF_UP, Decimal
+from functools import lru_cache
+from pathlib import Path
 from typing import Any
 
 from mcp_einvoicing_core.endpoints import EndpointSet
 from mcp_einvoicing_core.exceptions import EInvoicingError
 from mcp_einvoicing_core.models import InvoiceDocument, TaxIdentifier
+from mcp_einvoicing_core.schematron import XSDValidator
 
 logger = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# XSD loading (CORE-1-ES-DSIG)
+# ---------------------------------------------------------------------------
+
+#: URL by which the AEAT VeriFactu schema and the Factura-e 3.2.2 schema each
+#: ``xs:import`` the W3C XML-DSig schema. It does not resolve offline, so it is
+#: mapped to the bundled copy in ``resources/xmldsig/``.
+XMLDSIG_SCHEMA_URL = "http://www.w3.org/TR/xmldsig-core/xmldsig-core-schema.xsd"
+_XMLDSIG_SCHEMA = (
+    Path(__file__).resolve().parent / "resources" / "xmldsig" / "xmldsig-core-schema.xsd"
+)
+
+
+@lru_cache(maxsize=8)
+def load_xsd_validator(xsd_path: Path) -> XSDValidator:
+    """Compile *xsd_path* once, resolving the W3C XML-DSig import locally.
+
+    Raises:
+        FileNotFoundError: If the schema or the bundled XML-DSig schema is missing.
+        ValueError: If lxml cannot compile the schema set.
+    """
+    return XSDValidator(xsd_path, known_imports={XMLDSIG_SCHEMA_URL: str(_XMLDSIG_SCHEMA)})
 
 
 # ---------------------------------------------------------------------------

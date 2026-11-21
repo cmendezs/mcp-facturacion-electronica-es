@@ -16,6 +16,7 @@ Provenance (authority URL, retrieval date) for both files is recorded in `specs/
 |---|---|---|
 | `verifactu/SuministroLR.xsd` | `tools/verifactu.py::es__validate_verifactu_record` | Root schema for VeriFactu submissions. The old four-`.parent`-hop path only broke once packaged into a wheel — CORE-1's "silent downgrade" instance, `validation_mode` fell back to `"structural"` with no test catching it. |
 | `facturae/Facturaev3_2_2.xml` | `tools/facturae.py::es__validate_facturae` | Factura-e 3.2.2 root schema (`.xml` extension is correct — the file's own `targetNamespace` URI ends in `Facturaev3_2_2.xml`). The old three-`.parent`-hop path landed on `src/` and never resolved under any layout, checkout or installed — found and fixed in the same CORE-1 pass, not previously reported. |
+| `xmldsig/xmldsig-core-schema.xsd` | `_helpers.py::load_xsd_validator` | W3C XML Signature core schema (revision 1.1, 2002-02-08, copyright W3C). The VeriFactu and Factura-e schemas `xs:import` it by `http://www.w3.org/TR/xmldsig-core/xmldsig-core-schema.xsd`, which does not resolve offline; core's `XSDValidator(known_imports=...)` maps that URL to this file. |
 
 ## Update process
 

@@ -77,14 +77,6 @@ FACe se autentica mediante JWS usando el mismo certificado `AEAT_CERTIFICATE_PAT
 `AEAT_CERTIFICATE_PASSWORD` que VERI\*FACTU/SII (ver la seccion AEAT anterior); no se
 requieren credenciales FACe independientes.
 
-### TicketBAI
-
-| Variable | Descripcion | Obligatorio |
-|---|---|---|
-| `TICKETBAI_ENV` | `sandbox` o `production` | Si |
-| `TICKETBAI_CERTIFICATE_PATH` | Ruta del certificado de firma provincial | Si |
-| `TICKETBAI_CERTIFICATE_PASSWORD` | Contrasena del certificado | Si |
-
 ### Comunes (heredadas de `mcp-einvoicing-core`)
 
 | Variable | Descripcion | Por defecto |
@@ -198,7 +190,8 @@ Genera un registro de factura inviolable (Orden HAC/1177/2024) con encadenamient
 > claves) esta confirmado byte a byte contra la especificacion oficial de huella de la AEAT y
 > sus ejemplos resueltos
 > (`specs/verifactu/documentation/Veri-Factu_especificaciones_huella_hash_registros.pdf`).
-> ⚠️ Pendiente aun: validacion completa del XSD v1.0 contra una confirmacion real del entorno de
+> Los registros generados se validan contra el XSD v1.0 incluido (SuministroLR y SuministroInformacion,
+> con el esquema W3C XML-DSig resuelto en local). ⚠️ Pendiente aun: una confirmacion real del entorno de
 > pruebas AEAT.
 
 ---
@@ -525,79 +518,18 @@ original mediante `IDFactura`. El constructor de facturas rectificativas es cand
 
 ---
 
-### TicketBAI
-
-#### `es__generate_ticketbai_xml`
-
-Genera una factura XML TicketBAI con firma XAdES y cadena `HuellaTBAI`. Selecciona
-automaticamente el XSD provincial correcto: Araba v1.2, Gipuzkoa v1.2, Bizkaia v2.1.
-
-| Parametro | Tipo | Obligatorio | Descripcion |
-|---|---|---|---|
-| `invoice` | `InvoiceDocument` | Si | Modelo de factura del core |
-| `province` | `string` | Si | `"araba"`, `"gipuzkoa"` o `"bizkaia"` |
-| `previous_hash` | `string` | No | `HuellaTBAI` del registro precedente |
-| `software_license` | `string` | Si | Clave de licencia del software TicketBAI |
-| `cert_path` | `string` | Si | Ruta del certificado de firma |
-| `cert_password` | `string` | Si | Contrasena del certificado |
-
-```json
-{ "tool": "es__generate_ticketbai_xml", "arguments": { "invoice": { "date": "2025-03-15", "number": "2025-0042" }, "province": "gipuzkoa", "software_license": "TBAI-GI-12345", "cert_path": "/certs/empresa.p12", "cert_password": "s3cr3t" } }
-```
-
-> ⚠️ Pendiente de confirmacion regulatoria: los tres XSD provinciales deben empaquetarse por separado; no se deben validar cruzadamente entre provincias.
-
----
-
-#### `es__submit_ticketbai`
-
-Envia un registro TicketBAI XML a la autoridad provincial vasca correspondiente. El endpoint
-se enruta automaticamente: Araba (`batuz.eus`), Gipuzkoa (`tbai.egoitza.gipuzkoa.eus`),
-Bizkaia (`www.bizkaia.eus/ogasun`).
-
-| Parametro | Tipo | Obligatorio | Descripcion |
-|---|---|---|---|
-| `xml` | `string` | Si | XML TicketBAI firmado |
-| `province` | `string` | Si | `"araba"`, `"gipuzkoa"` o `"bizkaia"` |
-| `nif` | `string` | Si | NIF del remitente |
-
-```json
-{ "tool": "es__submit_ticketbai", "arguments": { "xml": "<T:TicketBai>...</T:TicketBai>", "province": "bizkaia", "nif": "B12345678" } }
-```
-
-> ⚠️ Pendiente de confirmacion regulatoria
-
----
-
-#### `es__validate_ticketbai_schema`
-
-Valida un documento XML TicketBAI contra el XSD provincial correcto. Los esquemas
-**no son intercambiables** entre provincias.
-
-| Parametro | Tipo | Obligatorio | Descripcion |
-|---|---|---|---|
-| `xml` | `string` | Si | XML TicketBAI |
-| `province` | `string` | Si | `"araba"`, `"gipuzkoa"` o `"bizkaia"` |
-
-```json
-{ "tool": "es__validate_ticketbai_schema", "arguments": { "xml": "<T:TicketBai>...</T:TicketBai>", "province": "gipuzkoa" } }
-```
-
-> ⚠️ Pendiente de confirmacion regulatoria
-
----
-
 ### Crea y Crece / B2B
 
 #### `es__generate_b2b_einvoice_es`
 
-Genera una factura B2B conforme a EN 16931 en formato UBL 2.1 o Facturae 3.2.2 segun
-la Ley 18/2022, desarrollada por el RD 238/2026 (BOE-A-2026-7295).
+Genera una factura B2B conforme a EN 16931 en formato UBL (perfil de la solución pública
+de la AEAT) o Facturae 3.2.2 segun la Ley 18/2022, desarrollada por el RD 238/2026 (BOE-A-2026-7295).
 
 | Parametro | Tipo | Obligatorio | Descripcion |
 |---|---|---|---|
 | `invoice` | `InvoiceDocument` | Si | Modelo de factura del core |
 | `format` | `string` | No | `"ubl"` (por defecto) o `"facturae"` |
+| `is_copy` | `boolean` | No | Solo UBL. BT-ES-1 del anexo I: `true` marca una copia fiel (por defecto: original) |
 
 ```json
 { "tool": "es__generate_b2b_einvoice_es", "arguments": { "invoice": { "date": "2025-03-15", "number": "2025-0042" }, "format": "ubl" } }
@@ -605,17 +537,21 @@ la Ley 18/2022, desarrollada por el RD 238/2026 (BOE-A-2026-7295).
 
 > ⚠️ El RD 238/2026 confirma los formatos admitidos (EN 16931: CII/UBL/EDIFACT/Facturae;
 > esta herramienta implementa UBL y Facturae). La Orden HAC/1028/2026 (BOE-A-2026-20587, en
-> vigor desde el 2026-10-06) regula la solución pública de facturación electrónica; este
-> generador aún no sigue su estructura UBL porque las especificaciones técnicas de la sede
-> electrónica de la AEAT siguen pendientes. `es__check_b2b_mandate_applicability` informa de
+> vigor desde el 2026-10-06) regula la solución pública de facturación electrónica. La salida
+> UBL sigue su anexo I (valores de BT-23 y BT-24, identificación por NIF/NIF-IVA, dirección
+> postal obligatoria) y se valida contra el esquema OASIS UBL 2.5; cubre una factura ordinaria
+> de tipo 380 con una categoría de IVA `S` por línea y sin los grupos BG-ES. Las reglas Schematron
+> de la AEAT para EN 16931:2026 no están publicadas, por lo que no se ejecutan [Unverified].
+> `es__check_b2b_mandate_applicability` informa de
 > las fechas de aplicación (2027-10-06 para los obligados con más de 8 M€, 2028-10-06 para el resto).
 
 ---
 
 #### `es__check_b2b_mandate_applicability`
 
-Determina el regimen aplicable (VERI\*FACTU, SII, TicketBAI, NaTicket) a partir del
-volumen de operaciones, el codigo de provincia y la inscripcion en el SII. Aplica la logica
+Determina el regimen aplicable (VERI\*FACTU o SII) a partir del volumen de
+operaciones, el codigo de provincia y la inscripcion en el SII. Las provincias forales
+(TicketBAI, NaTicket) se senalan como fuera de alcance. Aplica la logica
 de exclusion mutua del Real Decreto 254/2025.
 
 | Parametro | Tipo | Obligatorio | Descripcion |
@@ -638,10 +574,11 @@ de exclusion mutua del Real Decreto 254/2025.
 #### `es__detect_regional_regime`
 
 Detecta el regimen de facturacion electronica aplicable a partir del codigo de provincia INE.
-Devuelve `VERIFACTU`, `TICKETBAI`, `NATICKET` o `VERIFACTU+SII`.
+Devuelve `VERIFACTU` o `VERIFACTU+SII`.
 
-Provincias vascas: `01` Araba, `20` Gipuzkoa, `48` Bizkaia. Navarra: `31`.
-El resto devuelve `VERIFACTU`. Candidato a promocion a `mcp-einvoicing-core`.
+Para las provincias forales (`01` Araba, `20` Gipuzkoa, `48` Bizkaia, `31` Navarra), cuyos
+sistemas TicketBAI y NaTicket quedan fuera del alcance de este paquete, la respuesta incluye
+ademas un `out_of_scope_warning`. El resto de provincias devuelve `VERIFACTU` sin aviso. Candidato a promocion a `mcp-einvoicing-core`.
 
 | Parametro | Tipo | Obligatorio | Descripcion |
 |---|---|---|---|
@@ -728,8 +665,7 @@ localmente. No es un cliente de ninguna plataforma comercial de facturacion, y t
 firma y credenciales nunca salen de tu propia infraestructura.
 
 Los registros y facturas van directamente a la autoridad fiscal (la AEAT via SII y VeriFactu,
-FACe, o la plataforma provincial TicketBAI correspondiente) usando tu propio certificado; no
-interviene ningun intermediario.
+o FACe) usando tu propio certificado; no interviene ningun intermediario.
 
 ## Normas admitidas
 
@@ -744,7 +680,7 @@ que mantienen cada una sus propios esquemas XSD y endpoints. Navarra opera NaTic
 Crea y Crece exige la facturación electrónica B2B para todas las empresas; el RD 238/2026
 (BOE-A-2026-7295) confirma los formatos admitidos (EN 16931: CII/UBL/EDIFACT/Facturae),
 y la Orden HAC/1028/2026 regula la solución pública de facturación electrónica
-(especificaciones técnicas de la AEAT pendientes). La detección del régimen a partir del domicilio
+(la salida UBL sigue su anexo I; las reglas Schematron de la AEAT aún no están publicadas). La detección del régimen a partir del domicilio
 fiscal y el volumen de operaciones es un requisito previo a todas las demás operaciones:
 utilice `es__detect_regional_regime` en primer lugar.
 

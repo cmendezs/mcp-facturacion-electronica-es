@@ -1,0 +1,32 @@
+<?xml version="1.0" ?>
+<ApplicationResponse xmlns="urn:oasis:names:specification:ubl:schema:xsd:ApplicationResponse-2" xmlns:cac="urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2" xmlns:cbc="urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2" xmlns:cec="urn:oasis:names:specification:ubl:schema:xsd:CommonExtensionComponents-2" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="urn:oasis:names:specification:ubl:schema:xsd:ApplicationResponse-2 ../../../../src/main/resources/xsd/maindoc/UBL-ApplicationResponse-2.1.xsd">
+
+	
+	<cbc:ID>DOWNLOAD-20250512</cbc:ID>
+	<!--  Fecha en la que se genera la comunicación, que no de la factura -->
+	<cbc:IssueDate>2026-10-22</cbc:IssueDate>
+	<cac:SenderParty></cac:SenderParty>
+	<cac:ReceiverParty></cac:ReceiverParty>
+	<cac:DocumentResponse>
+		<cac:Response>
+			<cbc:ResponseCode>DOWNLOADBYID</cbc:ResponseCode>
+			<cbc:Description>Solicitud de descarga</cbc:Description>
+		</cac:Response>		
+		<!-- Referencias de las facturas a descargar. Devolverá un listado de ubl:invoice -->
+		<cac:DocumentReference>
+			<cbc:ID>CLASEA00000187</cbc:ID>
+			<cbc:IssueDate>2026-10-05</cbc:IssueDate>
+			<cbc:DocumentType>Invoice</cbc:DocumentType>
+			<cac:IssuerParty>
+				<cac:PartyTaxScheme>
+					<cbc:CompanyID>xxxx</cbc:CompanyID>
+					<cac:TaxScheme/>
+				</cac:PartyTaxScheme>
+				<!-- Nombre del emisor de la factura -->
+				<cac:PartyLegalEntity>
+					<cbc:RegistrationName>aaaa</cbc:RegistrationName>
+				</cac:PartyLegalEntity>				
+			</cac:IssuerParty>
+		</cac:DocumentReference>		
+	</cac:DocumentResponse>	
+</ApplicationResponse>

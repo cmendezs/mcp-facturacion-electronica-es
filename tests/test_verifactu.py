@@ -551,19 +551,91 @@ def test_build_chain_result_no_estado_blocks_chaining() -> None:
 
 
 @pytest.mark.asyncio
-async def test_handle_validate_verifactu_record_valid(minimal_verifactu_xml) -> None:
-    from mcp_facturacion_electronica_es.tools.verifactu import es__validate_verifactu_record
+async def test_handle_validate_verifactu_record_valid(minimal_invoice) -> None:
+    """A generated first record validates against the bundled SuministroLR.xsd.
 
-    data = await es__validate_verifactu_record(xml=minimal_verifactu_xml)
+    The AEAT schema imports the W3C XML-DSig schema by an offline-unresolvable URL;
+    the bundled copy under resources/xmldsig/ makes full XSD validation run
+    (CORE-1-ES-DSIG), so the mode is "xsd" rather than the structural fallback.
+    """
+    from mcp_facturacion_electronica_es.tools.verifactu import (
+        es__generate_verifactu_record,
+        es__validate_verifactu_record,
+    )
+
+    gen = await es__generate_verifactu_record(
+        invoice=minimal_invoice.model_dump(mode="json"),
+        software_id="ES",
+        software_nif="B12345674",
+    )
+    data = await es__validate_verifactu_record(xml=gen["xml"])
     assert "error" not in data
-    assert data["valid"] is True
     assert data["errors"] == []
-    # Pinned to today's known state, not the desired one: XSD compilation
-    # currently fails (missing local W3C xmldsig-core-schema.xsd import — see
-    # the warning comment in tools/verifactu.py), so this still falls back to
-    # structural-only. Once that gap is closed this should flip to "xsd" —
-    # if it does, update this assertion rather than treating it as a failure.
-    assert data["validation_mode"] == "structural"
+    assert data["valid"] is True
+    assert data["validation_mode"] == "xsd"
+
+
+@pytest.mark.asyncio
+async def test_generated_chained_record_validates_against_xsd(minimal_invoice) -> None:
+    """A chained record carries RegistroAnterior only: EncadenamientoType is a
+    choice, and PrimerRegistro admits the single value "S"."""
+    from mcp_facturacion_electronica_es.tools.verifactu import (
+        es__generate_verifactu_record,
+        es__validate_verifactu_record,
+    )
+
+    gen = await es__generate_verifactu_record(
+        invoice=minimal_invoice.model_dump(mode="json"),
+        software_id="ES",
+        software_nif="B12345674",
+        previous_hash="A" * 64,
+    )
+    assert "<sf:PrimerRegistro>N" not in gen["xml"]
+    data = await es__validate_verifactu_record(xml=gen["xml"])
+    assert data["errors"] == []
+    assert data["validation_mode"] == "xsd"
+
+
+@pytest.mark.asyncio
+async def test_generated_cancellation_validates_against_xsd() -> None:
+    from mcp_facturacion_electronica_es.tools.verifactu import (
+        es__cancel_verifactu_record,
+        es__validate_verifactu_record,
+    )
+
+    gen = await es__cancel_verifactu_record(
+        original_invoice_number="2025-0001",
+        original_invoice_date="2025-03-15",
+        issuer_nif="B12345674",
+        issuer_name="Empresa de Prueba SL",
+        previous_hash="A" * 64,
+    )
+    data = await es__validate_verifactu_record(xml=gen["xml"])
+    assert data["errors"] == []
+    assert data["validation_mode"] == "xsd"
+
+
+@pytest.mark.asyncio
+async def test_validate_verifactu_record_reports_schema_violation(minimal_invoice) -> None:
+    """A schema violation surfaces as an [XSD] error, not as a skipped check."""
+    from mcp_facturacion_electronica_es.tools.verifactu import (
+        es__generate_verifactu_record,
+        es__validate_verifactu_record,
+    )
+
+    gen = await es__generate_verifactu_record(
+        invoice=minimal_invoice.model_dump(mode="json"),
+        software_id="ES",
+        software_nif="B12345674",
+    )
+    broken = gen["xml"].replace(
+        "<sf:TipoFactura>F1</sf:TipoFactura>", "<sf:TipoFactura>ZZ</sf:TipoFactura>"
+    )
+    assert broken != gen["xml"]
+    data = await es__validate_verifactu_record(xml=broken)
+    assert data["valid"] is False
+    assert any(e.startswith("[XSD]") for e in data["errors"])
+    assert data["warnings"] == []
 
 
 @pytest.mark.asyncio

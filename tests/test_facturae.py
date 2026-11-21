@@ -6,6 +6,7 @@ import json
 
 import pytest
 from lxml import etree
+from mcp_einvoicing_core.exceptions import EInvoicingError
 
 from mcp_facturacion_electronica_es.tools.facturae import build_facturae_xml
 
@@ -26,7 +27,7 @@ def test_build_facturae_xml_structure(minimal_invoice) -> None:
     assert root.tag == f"{{{_FACTURAE_NS}}}Facturae"
 
     def _one(tag: str) -> str | None:
-        found = root.find(f".//{{{_FACTURAE_NS}}}{tag}")
+        found = root.find(f".//{tag}")
         return found.text if found is not None else None
 
     assert _one("SchemaVersion") == "3.2.2"
@@ -39,12 +40,12 @@ def test_build_facturae_xml_seller_buyer(minimal_invoice) -> None:
     xml_bytes = build_facturae_xml(minimal_invoice)
     root = etree.fromstring(xml_bytes)
 
-    seller = root.find(f".//{{{_FACTURAE_NS}}}SellerParty")
-    buyer = root.find(f".//{{{_FACTURAE_NS}}}BuyerParty")
+    seller = root.find(".//SellerParty")
+    buyer = root.find(".//BuyerParty")
     assert seller is not None
     assert buyer is not None
 
-    seller_nif = seller.find(f".//{{{_FACTURAE_NS}}}TaxIdentificationNumber")
+    seller_nif = seller.find(".//TaxIdentificationNumber")
     assert seller_nif is not None
     assert seller_nif.text == "B12345674"
 
@@ -53,11 +54,11 @@ def test_build_facturae_xml_vat(minimal_invoice) -> None:
     xml_bytes = build_facturae_xml(minimal_invoice)
     root = etree.fromstring(xml_bytes)
 
-    tax_rate = root.find(f".//{{{_FACTURAE_NS}}}TaxRate")
+    tax_rate = root.find(".//TaxRate")
     assert tax_rate is not None
     assert tax_rate.text == "21.00"
 
-    grand_total = root.find(f".//{{{_FACTURAE_NS}}}InvoiceTotal")
+    grand_total = root.find(".//InvoiceTotal")
     assert grand_total is not None
     assert grand_total.text == "1210.00"
 
@@ -95,18 +96,65 @@ async def test_handle_generate_facturae_xml_missing_invoice() -> None:
 
 
 @pytest.mark.asyncio
-async def test_handle_validate_facturae_schema_valid(minimal_facturae_xml) -> None:
+async def test_handle_validate_facturae_schema_valid(minimal_invoice) -> None:
+    """Generated Factura-e validates against the bundled Facturaev3_2_2.xml schema.
+
+    The schema imports the W3C XML-DSig schema by an offline-unresolvable URL; the
+    bundled copy under resources/xmldsig/ makes full XSD validation run
+    (CORE-1-ES-DSIG), so the mode is "xsd" rather than the structural fallback.
+    """
     from mcp_facturacion_electronica_es.tools.facturae import es__validate_facturae_schema
 
-    data = await es__validate_facturae_schema(xml=minimal_facturae_xml)
-    assert data["valid"] is True
+    xml = build_facturae_xml(minimal_invoice).decode()
+    data = await es__validate_facturae_schema(xml=xml)
     assert data["errors"] == []
-    # Pinned to today's known state, not the desired one: XSD compilation
-    # currently fails (missing local W3C xmldsig-core-schema.xsd import — see
-    # the warning comment in tools/facturae.py), so this still falls back to
-    # structural-only. Once that gap is closed this should flip to "xsd" —
-    # if it does, update this assertion rather than treating it as a failure.
-    assert data["validation_mode"] == "structural"
+    assert data["valid"] is True
+    assert data["warnings"] == []
+    assert data["validation_mode"] == "xsd"
+
+
+@pytest.mark.asyncio
+async def test_handle_validate_facturae_schema_reports_schema_violation(minimal_invoice) -> None:
+    from mcp_facturacion_electronica_es.tools.facturae import es__validate_facturae_schema
+
+    xml = build_facturae_xml(minimal_invoice).decode()
+    broken = xml.replace("<InvoiceIssuerType>EM<", "<InvoiceIssuerType>XX<")
+    assert broken != xml
+    data = await es__validate_facturae_schema(xml=broken)
+    assert data["valid"] is False
+    assert any(e.startswith("[XSD]") for e in data["errors"])
+
+
+def test_build_facturae_xml_children_are_unqualified(minimal_invoice) -> None:
+    """Facturaev3_2_2.xml has no elementFormDefault: only the root is namespaced."""
+    root = etree.fromstring(build_facturae_xml(minimal_invoice))
+    assert etree.QName(root).namespace == _FACTURAE_NS
+    assert all(etree.QName(el).namespace is None for el in root.iterchildren())
+
+
+def test_build_facturae_xml_overseas_party_uses_alpha3_and_overseas_block(
+    minimal_invoice,
+) -> None:
+    buyer = minimal_invoice.buyer.model_copy(
+        update={
+            "tax_id": minimal_invoice.buyer.tax_id.model_copy(update={"country_code": "FR"}),
+            "address": minimal_invoice.buyer.address.model_copy(update={"country_code": "FR"}),
+        }
+    )
+    inv = minimal_invoice.model_copy(update={"buyer": buyer})
+    with pytest.raises(EInvoicingError, match="alpha-3"):
+        build_facturae_xml(inv)
+    buyer = buyer.model_copy(
+        update={"address": buyer.address.model_copy(update={"country_code": "FRA"})}
+    )
+    root = etree.fromstring(build_facturae_xml(inv.model_copy(update={"buyer": buyer})))
+    assert root.find(".//BuyerParty//OverseasAddress/CountryCode").text == "FRA"
+    assert root.find(".//BuyerParty//OverseasAddress/PostCodeAndTown") is not None
+
+
+def test_build_facturae_xml_legacy_eu_issuer_type_reads_as_em(minimal_invoice) -> None:
+    root = etree.fromstring(build_facturae_xml(minimal_invoice, invoice_issuer_type="EU"))
+    assert root.find(".//InvoiceIssuerType").text == "EM"
 
 
 @pytest.mark.asyncio
@@ -162,7 +210,7 @@ def test_facturae_invoice_issuer_type_em(minimal_invoice) -> None:
     xml_bytes = build_facturae_xml(minimal_invoice, invoice_issuer_type="EM")
     root = etree.fromstring(xml_bytes)
     ns = {"fe": _FACTURAE_NS}
-    iit = root.find(".//fe:InvoiceIssuerType", ns)
+    iit = root.find(".//InvoiceIssuerType", ns)
     assert iit is not None
     assert iit.text == "EM"
 
@@ -171,7 +219,7 @@ def test_facturae_invoice_issuer_type_te(minimal_invoice) -> None:
     xml_bytes = build_facturae_xml(minimal_invoice, invoice_issuer_type="TE")
     root = etree.fromstring(xml_bytes)
     ns = {"fe": _FACTURAE_NS}
-    iit = root.find(".//fe:InvoiceIssuerType", ns)
+    iit = root.find(".//InvoiceIssuerType", ns)
     assert iit is not None
     assert iit.text == "TE"
 
@@ -182,10 +230,10 @@ def test_facturae_irpf_withholding(minimal_invoice) -> None:
     xml_bytes = build_facturae_xml(minimal_invoice, irpf_amount=D("150.00"))
     root = etree.fromstring(xml_bytes)
     ns = {"fe": _FACTURAE_NS}
-    withheld = root.find(".//fe:TotalTaxesWithheld", ns)
+    withheld = root.find(".//TotalTaxesWithheld", ns)
     assert withheld is not None
     assert withheld.text == "150.00"
-    invoice_total = root.find(".//fe:InvoiceTotal", ns)
+    invoice_total = root.find(".//InvoiceTotal", ns)
     assert invoice_total is not None
     assert D(invoice_total.text) == D("1060.00")
 
@@ -198,10 +246,10 @@ def test_facturae_resolution_reference(minimal_invoice) -> None:
     )
     root = etree.fromstring(xml_bytes)
     ns = {"fe": _FACTURAE_NS}
-    rr = root.find(".//fe:ResolutionReference", ns)
+    rr = root.find(".//ResolutionReference", ns)
     assert rr is not None
     assert rr.text == "RES-2025-001"
-    rtr = root.find(".//fe:ReceiverTransactionReference", ns)
+    rtr = root.find(".//ReceiverTransactionReference", ns)
     assert rtr is not None
     assert rtr.text == "RTR-2025-001"
 
@@ -226,7 +274,7 @@ def test_facturae_tax_type_igic(minimal_invoice) -> None:
     xml_bytes = build_facturae_xml(minimal_invoice, tax_type="IGIC")
     root = etree.fromstring(xml_bytes)
     ns = {"fe": _FACTURAE_NS}
-    codes = root.findall(".//fe:TaxTypeCode", ns)
+    codes = root.findall(".//TaxTypeCode", ns)
     assert len(codes) >= 1
     assert all(c.text == "03" for c in codes)
 
@@ -235,7 +283,7 @@ def test_facturae_tax_type_ipsi(minimal_invoice) -> None:
     xml_bytes = build_facturae_xml(minimal_invoice, tax_type="IPSI")
     root = etree.fromstring(xml_bytes)
     ns = {"fe": _FACTURAE_NS}
-    codes = root.findall(".//fe:TaxTypeCode", ns)
+    codes = root.findall(".//TaxTypeCode", ns)
     assert all(c.text == "02" for c in codes)
 
 
@@ -243,7 +291,7 @@ def test_facturae_tax_type_default_iva(minimal_invoice) -> None:
     xml_bytes = build_facturae_xml(minimal_invoice)
     root = etree.fromstring(xml_bytes)
     ns = {"fe": _FACTURAE_NS}
-    code = root.find(".//fe:TaxesOutputs/fe:Tax/fe:TaxTypeCode", ns)
+    code = root.find(".//TaxesOutputs/Tax/TaxTypeCode", ns)
     assert code is not None
     assert code.text == "01"
 
@@ -254,13 +302,13 @@ def test_facturae_recargo_equivalencia(minimal_invoice) -> None:
     xml_bytes = build_facturae_xml(minimal_invoice, recargo_equivalencia_rate=D("5.2"))
     root = etree.fromstring(xml_bytes)
     ns = {"fe": _FACTURAE_NS}
-    rate = root.find(".//fe:EquivalenceSurcharge", ns)
-    amount = root.find(".//fe:EquivalenceSurchargeAmount/fe:TotalAmount", ns)
+    rate = root.find(".//EquivalenceSurcharge", ns)
+    amount = root.find(".//EquivalenceSurchargeAmount/TotalAmount", ns)
     assert rate is not None and rate.text == "5.20"
     assert amount is not None and amount.text == "52.00"
-    total_tax_outputs = root.find(".//fe:TotalTaxOutputs", ns)
+    total_tax_outputs = root.find(".//TotalTaxOutputs", ns)
     assert total_tax_outputs.text == "262.00"
-    invoice_total = root.find(".//fe:InvoiceTotal", ns)
+    invoice_total = root.find(".//InvoiceTotal", ns)
     assert invoice_total.text == "1262.00"
 
 
@@ -270,19 +318,19 @@ def test_facturae_irpf_rate_taxes_withheld_block(minimal_invoice) -> None:
     xml_bytes = build_facturae_xml(minimal_invoice, irpf_amount=D("150.00"), irpf_rate=D("15.00"))
     root = etree.fromstring(xml_bytes)
     ns = {"fe": _FACTURAE_NS}
-    withheld = root.find(".//fe:TaxesWithheld/fe:Tax", ns)
+    withheld = root.find(".//TaxesWithheld/Tax", ns)
     assert withheld is not None
-    assert withheld.find("fe:TaxTypeCode", ns).text == "04"
-    assert withheld.find("fe:TaxRate", ns).text == "15.00"
-    assert withheld.find("fe:TaxableBase/fe:TotalAmount", ns).text == "1000.00"
-    assert withheld.find("fe:TaxAmount/fe:TotalAmount", ns).text == "150.00"
+    assert withheld.find("TaxTypeCode", ns).text == "04"
+    assert withheld.find("TaxRate", ns).text == "15.00"
+    assert withheld.find("TaxableBase/TotalAmount", ns).text == "1000.00"
+    assert withheld.find("TaxAmount/TotalAmount", ns).text == "150.00"
 
 
 def test_facturae_no_taxes_withheld_block_without_irpf(minimal_invoice) -> None:
     xml_bytes = build_facturae_xml(minimal_invoice)
     root = etree.fromstring(xml_bytes)
     ns = {"fe": _FACTURAE_NS}
-    assert root.find(".//fe:TaxesWithheld", ns) is None
+    assert root.find(".//TaxesWithheld", ns) is None
 
 
 @pytest.mark.asyncio
@@ -314,7 +362,7 @@ def test_facturae_line_tax_decimal_precision(minimal_invoice) -> None:
     xml_bytes = build_facturae_xml(minimal_invoice)
     root = etree.fromstring(xml_bytes)
     ns = {"fe": _FACTURAE_NS}
-    tax_amounts = root.findall(".//fe:InvoiceLine//fe:TaxAmount/fe:TotalAmount", ns)
+    tax_amounts = root.findall(".//InvoiceLine//TaxAmount/TotalAmount", ns)
     assert len(tax_amounts) >= 1
     for ta in tax_amounts:
         val = D(ta.text)

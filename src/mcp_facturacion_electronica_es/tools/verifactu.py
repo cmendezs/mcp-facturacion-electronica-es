@@ -54,6 +54,7 @@ from mcp_einvoicing_core.qr import generate_qr_png_base64
 from mcp_einvoicing_core.signer_client import SignerClient
 from mcp_einvoicing_core.xml_utils import safe_fromstring
 
+from mcp_facturacion_electronica_es import __version__ as _PACKAGE_VERSION
 from mcp_facturacion_electronica_es._helpers import (
     VERIFACTU_CONSULTA_ENDPOINTS,
     VERIFACTU_ENDPOINTS,
@@ -62,6 +63,7 @@ from mcp_facturacion_electronica_es._helpers import (
     err,
     fmt_amount,
     fmt_date_es,
+    load_xsd_validator,
     ok,
     parse_invoice,
 )
@@ -308,14 +310,13 @@ def _build_registro_alta(
 
     # Desglose IVA
     desglose = _sub(ra, "Desglose")
-    desglose_iva = _sub(desglose, "DesgloseIVA")
     for vat in invoice.vat_summary:
-        detail = _sub(desglose_iva, "DetalleIVA")
+        detail = _sub(desglose, "DetalleDesglose")
         _sub(detail, "Impuesto", impuesto)
         _sub(detail, "ClaveRegimen", clave_regimen)
         _sub(detail, "CalificacionOperacion", calificacion_operacion)
         _sub(detail, "TipoImpositivo", fmt_amount(vat.vat_rate))
-        _sub(detail, "BaseImponibleOImporteNoSujeto", fmt_amount(vat.taxable_base))
+        _sub(detail, "BaseImponibleOimporteNoSujeto", fmt_amount(vat.taxable_base))
         _sub(detail, "CuotaRepercutida", fmt_amount(vat.vat_amount))
         if recargo_equivalencia_rate is not None:
             _sub(detail, "TipoRecargoEquivalencia", fmt_amount(recargo_equivalencia_rate))
@@ -330,7 +331,7 @@ def _build_registro_alta(
     # Encadenamiento — ES-LC-4: EncadenamientoFacturaAnteriorType requires all 4 fields
     enc = _sub(ra, "Encadenamiento")
     if previous_hash:
-        _sub(enc, "PrimerRegistro", "N")
+        # EncadenamientoType is a choice: PrimerRegistro (only "S") or RegistroAnterior.
         reg_ant = _sub(enc, "RegistroAnterior")
         # EncadenamientoFacturaAnteriorType (SuministroInformacion.xsd):
         # IDEmisorFactura + NumSerieFactura + FechaExpedicionFactura + Huella — all required
@@ -347,7 +348,7 @@ def _build_registro_alta(
     _sub(si, "NIF", software_nif)
     _sub(si, "NombreSistemaInformatico", "mcp-facturacion-electronica-es")
     _sub(si, "IdSistemaInformatico", software_id[:2] if software_id else _SOFTWARE_ID_CODE)
-    _sub(si, "Version", "0.1.0")
+    _sub(si, "Version", _PACKAGE_VERSION)
     _sub(si, "NumeroInstalacion", "001")
     _sub(si, "TipoUsoPosibleSoloVerifactu", "S")
     _sub(si, "TipoUsoPosibleMultiOT", "N")
@@ -382,10 +383,12 @@ def _wrap_registro_facturacion(
         "sf": _VF_SF_NS,
     }
     root = etree.Element(f"{{{_VF_LR_NS}}}RegFactuSistemaFacturacion", nsmap=nsmap)
-    # Cabecera and its children are in SuministroInformacion namespace
-    cab = etree.SubElement(root, f"{{{_VF_SF_NS}}}Cabecera")
+    # Cabecera is a local element of RegFactuSistemaFacturacion in SuministroLR.xsd
+    # (elementFormDefault="qualified"), so the element itself is in the SuministroLR
+    # namespace; its type (sf:CabeceraType) puts the children in SuministroInformacion.
+    cab = etree.SubElement(root, f"{{{_VF_LR_NS}}}Cabecera")
     oblig = etree.SubElement(cab, f"{{{_VF_SF_NS}}}ObligadoEmision")
-    etree.SubElement(oblig, f"{{{_VF_SF_NS}}}NombreRazonSocial").text = emisor_name
+    etree.SubElement(oblig, f"{{{_VF_SF_NS}}}NombreRazon").text = emisor_name
     etree.SubElement(oblig, f"{{{_VF_SF_NS}}}NIF").text = emisor_nif
     # RegistroFactura wrapper (SuministroLR namespace), contains RegistroAlta/Anulacion
     reg_factura = etree.SubElement(root, f"{{{_VF_LR_NS}}}RegistroFactura")
@@ -843,23 +846,11 @@ async def es__validate_verifactu_record(
 
         if _SUMINISTRO_LR_XSD.exists():
             try:
-                xsd_doc = etree.parse(str(_SUMINISTRO_LR_XSD))
-                schema = etree.XMLSchema(xsd_doc)
-                schema.validate(root)
-                for e in schema.error_log:
-                    errors.append(f"[XSD] {e.message} (linea {e.line})")
+                result = load_xsd_validator(_SUMINISTRO_LR_XSD).validate(xml_bytes)
+                for m in result.errors:
+                    errors.append(f"[XSD] {m.text} ({m.location.replace('line', 'linea')})")
                 validation_mode = "xsd"
             except Exception as exc:
-                # [Unverified] SuministroInformacion.xsd itself <import>s the
-                # W3C XML-DSig schema by absolute URL
-                # (http://www.w3.org/TR/xmldsig-core/xmldsig-core-schema.xsd),
-                # which is not bundled locally and does not resolve offline —
-                # confirmed 2026-09-09 that schema compilation currently fails
-                # for this reason (a `ds:Signature` element reference does not
-                # resolve). A local copy + core's XSDValidator known_imports
-                # resolver hook (v1.32.0, CORE-7 pattern) would fix this, but
-                # per project policy normative specs must be user-supplied,
-                # not agent-fetched (tracked as CORE-1-ES-DSIG).
                 warnings.append(f"XSD validation failed to run: {exc}")
         else:
             warnings.append(
@@ -1235,12 +1226,13 @@ async def es__cancel_verifactu_record(
         # Build RegistroAnulacion
         ra = _el("RegistroAnulacion")
         _sub(ra, "IDVersion", _VERIFACTU_VERSION)
+        # RegistroAnulacion (SuministroInformacion.xsd) has no NombreRazonEmisor element:
+        # that field exists on RegistroAlta only.
         ra.append(_build_id_factura_anulada(num_serie, issuer_nif, fecha_es))
-        _sub(ra, "NombreRazonEmisor", issuer_name)
 
         # ES-LC-4: EncadenamientoFacturaAnteriorType requires all 4 identity fields
         enc = _sub(ra, "Encadenamiento")
-        _sub(enc, "PrimerRegistro", "N")
+        # EncadenamientoType is a choice: PrimerRegistro (only "S") or RegistroAnterior.
         reg_ant = _sub(enc, "RegistroAnterior")
         _sub(reg_ant, "IDEmisorFactura", previous_emisor_nif or issuer_nif)
         _sub(reg_ant, "NumSerieFactura", previous_num_serie or num_serie)
@@ -1253,7 +1245,7 @@ async def es__cancel_verifactu_record(
         _sub(si, "NIF", issuer_nif)
         _sub(si, "NombreSistemaInformatico", "mcp-facturacion-electronica-es")
         _sub(si, "IdSistemaInformatico", _SOFTWARE_ID_CODE)
-        _sub(si, "Version", "0.1.0")
+        _sub(si, "Version", _PACKAGE_VERSION)
         _sub(si, "NumeroInstalacion", "001")
         _sub(si, "TipoUsoPosibleSoloVerifactu", "S")
         _sub(si, "TipoUsoPosibleMultiOT", "N")

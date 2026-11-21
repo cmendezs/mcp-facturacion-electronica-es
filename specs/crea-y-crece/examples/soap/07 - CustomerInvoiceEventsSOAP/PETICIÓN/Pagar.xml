@@ -1,0 +1,43 @@
+<?xml version="1.0"?>
+<ApplicationResponse xmlns="urn:oasis:names:specification:ubl:schema:xsd:ApplicationResponse-2" xmlns:cac="urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2" xmlns:cbc="urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2" xmlns:cec="urn:oasis:names:specification:ubl:schema:xsd:CommonExtensionComponents-2" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="urn:oasis:names:specification:ubl:schema:xsd:ApplicationResponse-2 ../../../../src/main/resources/xsd/maindoc/UBL-ApplicationResponse-2.1.xsd">
+	<!-- OPERACIÓN SOLO PARA EL DESTINATARIO -->
+	<cbc:ID>PAYMENTS-20250213-0001</cbc:ID>
+	<!--  Fecha en la que se genera la comunicación, que no del pago -->
+	<cbc:IssueDate>2026-10-16</cbc:IssueDate>
+	<cac:SenderParty/>
+	<cac:ReceiverParty/>
+	<!-- Puede haber varios DocumentResponse en una misma petición. Cada uno de ellos afecta a una única factura -->
+	<cac:DocumentResponse>
+		<cac:Response>
+			<!-- Se trata de la confirmación de un pago "PAYMENT". -->
+			<cbc:ResponseCode>PAYMENT</cbc:ResponseCode>
+			<!-- Fecha de pago de la factura -->
+			<cbc:EffectiveDate>2026-10-16</cbc:EffectiveDate>
+			<cac:Status>
+				<cbc:ReferenceDate>2026-10-20</cbc:ReferenceDate>
+				<cac:Condition>
+					<cbc:AttributeID>DueDate</cbc:AttributeID>
+				</cac:Condition>
+			</cac:Status>			
+		</cac:Response>
+		<!-- Datos de la factura sobre la que operamos -->
+		<cac:DocumentReference>
+			<!-- Toda factura debe estar identificada por: (Nº de Factura, fecha de expedición y NIF del emisor) tal cual se muestra a continuación -->
+			<cbc:ID>A01</cbc:ID>
+			<cbc:IssueDate>2026-10-05</cbc:IssueDate>
+			<cbc:DocumentType>Invoice</cbc:DocumentType>
+			<cac:IssuerParty>
+				<cac:PartyTaxScheme>
+					<cbc:CompanyID>xxxx</cbc:CompanyID>
+					<cac:TaxScheme/>
+				</cac:PartyTaxScheme>
+				<!-- Nombre del emisor de la factura -->
+				<cac:PartyLegalEntity>
+					<cbc:RegistrationName>aaaa</cbc:RegistrationName>
+				</cac:PartyLegalEntity>
+			</cac:IssuerParty>
+		</cac:DocumentReference>
+		<!-- No se permiten más DocumentReference en este punto, uno por DocumentResponse -->
+	</cac:DocumentResponse>
+	
+</ApplicationResponse>

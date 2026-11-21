@@ -76,14 +76,6 @@ FACe authenticates via JWS using the same `AEAT_CERTIFICATE_PATH` / `AEAT_CERTIF
 certificate as VERI\*FACTU/SII (see the AEAT section above); no separate FACe credentials are
 required.
 
-### TicketBAI
-
-| Variable | Description | Required |
-|---|---|---|
-| `TICKETBAI_ENV` | `sandbox` or `production` | Yes |
-| `TICKETBAI_CERTIFICATE_PATH` | Provincial signing certificate path | Yes |
-| `TICKETBAI_CERTIFICATE_PASSWORD` | Certificate password | Yes |
-
 ### Common (inherited from `mcp-einvoicing-core`)
 
 | Variable | Description | Default |
@@ -196,7 +188,8 @@ chaining that links it to the previous record.
 > The `Huella` chaining algorithm (SHA-256 over the keyed `campo=valor&` canonical string) is
 > confirmed byte-for-byte against AEAT's own huella specification and its worked examples
 > (`specs/verifactu/documentation/Veri-Factu_especificaciones_huella_hash_registros.pdf`).
-> ⚠️ Still pending: full XSD v1.0 validation against a live AEAT test-environment acknowledgement.
+> Generated records validate against the bundled XSD v1.0 (SuministroLR and SuministroInformacion, with
+> the W3C XML-DSig schema resolved locally). ⚠️ Still pending: a live AEAT test-environment acknowledgement.
 
 ---
 
@@ -514,79 +507,18 @@ invoice via `IDFactura`. The credit note builder is a candidate for `mcp-einvoic
 
 ---
 
-### TicketBAI
-
-#### `es__generate_ticketbai_xml`
-
-Generates a TicketBAI XML invoice with XAdES signature and `HuellaTBAI` chain. Automatically
-selects the correct provincial XSD: Araba v1.2, Gipuzkoa v1.2, Bizkaia v2.1.
-
-| Parameter | Type | Required | Description |
-|---|---|---|---|
-| `invoice` | `InvoiceDocument` | Yes | Core invoice model |
-| `province` | `string` | Yes | `"araba"`, `"gipuzkoa"` or `"bizkaia"` |
-| `previous_hash` | `string` | No | `HuellaTBAI` of the preceding record |
-| `software_license` | `string` | Yes | TicketBAI software license key |
-| `cert_path` | `string` | Yes | Signing certificate path |
-| `cert_password` | `string` | Yes | Certificate password |
-
-```json
-{ "tool": "es__generate_ticketbai_xml", "arguments": { "invoice": { "date": "2025-03-15", "number": "2025-0042" }, "province": "gipuzkoa", "software_license": "TBAI-GI-12345", "cert_path": "/certs/empresa.p12", "cert_password": "s3cr3t" } }
-```
-
-> ⚠️ Pending regulatory confirmation: the three provincial XSDs must be packaged separately; cross-province validation is not permitted.
-
----
-
-#### `es__submit_ticketbai`
-
-Submits a TicketBAI XML record to the corresponding Basque provincial authority. The endpoint
-is automatically routed: Araba (`batuz.eus`), Gipuzkoa (`tbai.egoitza.gipuzkoa.eus`),
-Bizkaia (`www.bizkaia.eus/ogasun`).
-
-| Parameter | Type | Required | Description |
-|---|---|---|---|
-| `xml` | `string` | Yes | Signed TicketBAI XML |
-| `province` | `string` | Yes | `"araba"`, `"gipuzkoa"` or `"bizkaia"` |
-| `nif` | `string` | Yes | Sender NIF |
-
-```json
-{ "tool": "es__submit_ticketbai", "arguments": { "xml": "<T:TicketBai>...</T:TicketBai>", "province": "bizkaia", "nif": "B12345678" } }
-```
-
-> ⚠️ Pending regulatory confirmation
-
----
-
-#### `es__validate_ticketbai_schema`
-
-Validates a TicketBAI XML document against the correct provincial XSD. The schemas
-**are not interchangeable** between provinces.
-
-| Parameter | Type | Required | Description |
-|---|---|---|---|
-| `xml` | `string` | Yes | TicketBAI XML |
-| `province` | `string` | Yes | `"araba"`, `"gipuzkoa"` or `"bizkaia"` |
-
-```json
-{ "tool": "es__validate_ticketbai_schema", "arguments": { "xml": "<T:TicketBai>...</T:TicketBai>", "province": "gipuzkoa" } }
-```
-
-> ⚠️ Pending regulatory confirmation
-
----
-
 ### Crea y Crece / B2B
 
 #### `es__generate_b2b_einvoice_es`
 
-Generates a B2B invoice conforming to EN 16931 in UBL 2.1 or Facturae 3.2.2 format
-per Ley 18/2022, developed by RD 238/2026 (BOE-A-2026-7295).
+Generates a B2B invoice conforming to EN 16931 in UBL (AEAT public solution profile) or
+Facturae 3.2.2 format per Ley 18/2022, developed by RD 238/2026 (BOE-A-2026-7295).
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
 | `invoice` | `InvoiceDocument` | Yes | Core invoice model |
 | `format` | `string` | No | `"ubl"` (default) or `"facturae"` |
+| `is_copy` | `boolean` | No | UBL only. Annex I BT-ES-1: `true` marks a faithful copy (default: original) |
 
 ```json
 { "tool": "es__generate_b2b_einvoice_es", "arguments": { "invoice": { "date": "2025-03-15", "number": "2025-0042" }, "format": "ubl" } }
@@ -594,17 +526,20 @@ per Ley 18/2022, developed by RD 238/2026 (BOE-A-2026-7295).
 
 > ⚠️ RD 238/2026 confirms the admitted formats (EN 16931: CII/UBL/EDIFACT/Facturae; this
 > tool implements UBL and Facturae). Orden HAC/1028/2026 (BOE-A-2026-20587, in force
-> 2026-10-06) regulates the public e-invoicing solution; this generator does not yet follow
-> its UBL structure because the AEAT electronic-office technical specifications are still
-> pending. `es__check_b2b_mandate_applicability` reports the application dates (2027-10-06 for
+> 2026-10-06) regulates the public e-invoicing solution. The UBL output follows Annex I
+> (BT-23 and BT-24 values, NIF/NIF-IVA party identification, mandatory postal address) and
+> validates against the OASIS UBL 2.5 schema; it covers an ordinary type 380 invoice with
+> one `S` VAT category per line and none of the Spanish BG-ES groups. The AEAT Schematron
+> rules for EN 16931:2026 are not published, so they are not run [Unverified].
+> `es__check_b2b_mandate_applicability` reports the application dates (2027-10-06 for
 > taxpayers above €8M, 2028-10-06 for all others).
 
 ---
 
 #### `es__check_b2b_mandate_applicability`
 
-Determines the applicable regime (VERI\*FACTU, SII, TicketBAI, NaTicket) based on
-turnover, province code, and SII enrollment. Applies the mutual exclusion logic of
+Determines the applicable regime (VERI\*FACTU or SII) based on turnover, province
+code, and SII enrollment. Foral provinces (TicketBAI, NaTicket) are flagged as out of scope. Applies the mutual exclusion logic of
 Real Decreto 254/2025.
 
 | Parameter | Type | Required | Description |
@@ -627,10 +562,11 @@ Real Decreto 254/2025.
 #### `es__detect_regional_regime`
 
 Detects the applicable e-invoicing regime based on the INE province code.
-Returns `VERIFACTU`, `TICKETBAI`, `NATICKET`, or `VERIFACTU+SII`.
+Returns `VERIFACTU` or `VERIFACTU+SII`.
 
-Basque provinces: `01` Araba, `20` Gipuzkoa, `48` Bizkaia. Navarre: `31`.
-All others return `VERIFACTU`. Candidate for promotion to `mcp-einvoicing-core`.
+For the foral provinces (`01` Araba, `20` Gipuzkoa, `48` Bizkaia, `31` Navarre), whose TicketBAI and
+NaTicket systems are out of scope for this package, the response also carries an
+`out_of_scope_warning`. All other provinces return `VERIFACTU` without a warning. Candidate for promotion to `mcp-einvoicing-core`.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
@@ -716,9 +652,8 @@ This server implements the standard itself: it builds, validates, and signs the 
 locally. It is not a client for a commercial invoicing platform, and your signing keys and
 credentials never leave your own infrastructure.
 
-Records and invoices go directly to the tax authority — the AEAT (SII, VeriFactu), FACe, or
-the relevant provincial TicketBAI platform — using your own certificate; no intermediary is
-involved.
+Records and invoices go directly to the tax authority — the AEAT (SII, VeriFactu) or FACe —
+using your own certificate; no intermediary is involved.
 
 ## Supported standards
 
@@ -732,7 +667,7 @@ independently, with three provincial authorities each maintaining their own XSD 
 endpoints. Navarre operates NaTicket. The Ley Crea y Crece mandates B2B e-invoicing for
 all businesses; RD 238/2026 (BOE-A-2026-7295) confirms the admitted formats (EN 16931:
 CII/UBL/EDIFACT/Facturae), and Orden HAC/1028/2026 regulates the public e-invoicing
-solution (AEAT technical specifications still pending). Regime detection
+solution (UBL output follows its Annex I; the AEAT Schematron rules are not yet published). Regime detection
 based on tax domicile and turnover is a prerequisite to all other operations: use
 `es__detect_regional_regime` first.
 

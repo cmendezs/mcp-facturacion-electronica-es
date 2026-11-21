@@ -70,14 +70,21 @@ def _add_months(start: date, months: int) -> date:
     return date(year, month, min(start.day, last_day))
 
 
-# UBL 2.1 namespaces
+# UBL namespaces. UBL 2.5 keeps the UBL 2.1 namespace URNs, so the Invoice-2 /
+# CommonAggregateComponents-2 / CommonBasicComponents-2 URNs below are the ones
+# the AEAT public solution (UBL 2.5, per its service catalogue) uses.
 _UBL_INVOICE_NS = "urn:oasis:names:specification:ubl:schema:xsd:Invoice-2"
 _CAC_NS = "urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2"
 _CBC_NS = "urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2"
 
+# Annex I of the Orden HAC/1028/2026: BT-24 (Identificador de especificacion) and
+# BT-23 (Tipo de proceso de negocio) each "adoptara el valor" below.
+AEAT_CUSTOMIZATION_ID = "urn:cen.eu:en16931:2026#conformant#urn:aeat.es:spfe:1.0.0:extended"
+AEAT_B2B_PROFILE_ID = "urn:aeat:names:specification:schema:profile:B2B"
+
 
 # ---------------------------------------------------------------------------
-# UBL 2.1 EN 16931 builder (minimal, Ley 18/2022)
+# UBL EN 16931 builder for the AEAT public solution (Ley 18/2022, RD 238/2026)
 # ---------------------------------------------------------------------------
 
 
@@ -88,135 +95,135 @@ def _sub(parent: etree._Element, ns: str, tag: str, text: str | None = None) -> 
     return child
 
 
-def build_ubl_invoice(invoice: InvoiceDocument) -> bytes:
-    """Build an EN 16931-compliant UBL 2.1 Invoice from a core InvoiceDocument.
+def _amount(parent: etree._Element, tag: str, value: Decimal, currency: str) -> etree._Element:
+    elem = _sub(parent, _CBC_NS, tag, fmt_amount(value))
+    elem.set("currencyID", currency)
+    return elem
+
+
+def _vat_identifier(party: Any) -> str:
+    """Return the NIF-IVA (BT-31 / BT-48) with the ISO 3166-1 country prefix."""
+    country = party.tax_id.country_code.upper()
+    ident = party.tax_id.identifier.upper()
+    return ident if ident.startswith(country) else f"{country}{ident}"
+
+
+def _build_party(parent: etree._Element, party: Any) -> None:
+    """Append a cac:Party following Annex I (BG-4 to BG-6 and BG-7 to BG-9).
+
+    A Spanish party is identified by its NIF (BT-32 / BT-47: ``CompanyID`` with
+    ``schemeID="FC"`` under tax scheme ``LOC``); any other party by its NIF-IVA under
+    tax scheme ``VAT``. BT-30 / BT-46 (legal registration identifier) repeats the NIF,
+    because Annex I makes it mandatory whenever BT-32 / BT-47 is present.
+    """
+    party_elem = _sub(parent, _CAC_NS, "Party")
+    address = party.address
+    if address is not None:  # BG-5 / BG-8 (BR-ES-8, BR-ES-10: street and country mandatory)
+        postal = _sub(party_elem, _CAC_NS, "PostalAddress")
+        _sub(postal, _CBC_NS, "StreetName", address.street[:200])
+        _sub(postal, _CBC_NS, "CityName", address.city[:100])
+        _sub(postal, _CBC_NS, "PostalZone", address.postal_code[:20])
+        if address.province:
+            _sub(postal, _CBC_NS, "CountrySubentity", address.province[:100])
+        country = _sub(postal, _CAC_NS, "Country")
+        _sub(country, _CBC_NS, "IdentificationCode", address.country_code.upper())
+
+    scheme = _sub(party_elem, _CAC_NS, "PartyTaxScheme")
+    if party.tax_id.country_code.upper() == "ES":
+        company = _sub(scheme, _CBC_NS, "CompanyID", party.tax_id.identifier)
+        company.set("schemeID", "FC")
+        _sub(_sub(scheme, _CAC_NS, "TaxScheme"), _CBC_NS, "ID", "LOC")
+    else:
+        _sub(scheme, _CBC_NS, "CompanyID", _vat_identifier(party))
+        _sub(_sub(scheme, _CAC_NS, "TaxScheme"), _CBC_NS, "ID", "VAT")
+
+    legal = _sub(party_elem, _CAC_NS, "PartyLegalEntity")
+    _sub(legal, _CBC_NS, "RegistrationName", party.display_name[:200])
+    _sub(legal, _CBC_NS, "CompanyID", party.tax_id.identifier)
+
+
+def build_ubl_invoice(invoice: InvoiceDocument, *, is_copy: bool = False) -> bytes:
+    """Build a UBL Invoice for the AEAT public e-invoicing solution.
+
+    The structure follows Annex I of the Orden HAC/1028/2026 (BT-23 and BT-24 values,
+    the Spanish party identification, mandatory postal addresses) and is validated in
+    the test suite against the OASIS UBL 2.5 ``UBL-Invoice-2.5.xsd``. The Annex I
+    Spanish extensions not listed in the supported fields below are not emitted.
+
+    Supported Annex I terms: BT-1, BT-ES-1, BT-2, BT-3 (380 only), BT-5, BT-9, BG-1
+    (one free-text note), BG-2 (BT-23, BT-24), BG-4 to BG-9, BG-16, BG-22, BG-23,
+    BG-25.
 
     Args:
         invoice: Core InvoiceDocument.
+        is_copy: BT-ES-1. ``True`` marks the document as a faithful copy
+            (``cbc:CopyIndicator`` true); the default marks an original.
 
     Returns:
-        UTF-8 UBL 2.1 XML bytes.
+        UTF-8 UBL XML bytes.
     """
-    nsmap = {
-        None: _UBL_INVOICE_NS,
-        "cac": _CAC_NS,
-        "cbc": _CBC_NS,
-    }
+    currency = invoice.currency.upper()
+    nsmap = {"in": _UBL_INVOICE_NS, "cac": _CAC_NS, "cbc": _CBC_NS}
     root = etree.Element(f"{{{_UBL_INVOICE_NS}}}Invoice", nsmap=nsmap)
 
-    # CustomizationID/ProfileID below are [Inference: Peppol BIS 3.0] pending the RD
-    # 238/2026 Orden Ministerial's "UBL usage terms" (art. 7.1.b / Disp. final tercera
-    # §1) and the public-solution UBL usage terms. No emitter rewrite until the OM lands.
-    _sub(
-        root,
-        _CBC_NS,
-        "CustomizationID",
-        "urn:cen.eu:en16931:2017#compliant#urn:fdc:peppol.eu:2017:poacc:billing:3.0",
-    )
-    _sub(root, _CBC_NS, "ProfileID", "urn:fdc:peppol.eu:2017:poacc:billing:01:1.0")
-    _sub(root, _CBC_NS, "ID", invoice.number)
-    _sub(root, _CBC_NS, "IssueDate", invoice.date)
-    _sub(root, _CBC_NS, "InvoiceTypeCode", "380")  # 380 = commercial invoice
-    _sub(root, _CBC_NS, "DocumentCurrencyCode", invoice.currency.upper())
-
+    _sub(root, _CBC_NS, "CustomizationID", AEAT_CUSTOMIZATION_ID)  # BT-24
+    _sub(root, _CBC_NS, "ProfileID", AEAT_B2B_PROFILE_ID)  # BT-23
+    _sub(root, _CBC_NS, "ID", invoice.number)  # BT-1
+    _sub(root, _CBC_NS, "CopyIndicator", "true" if is_copy else "false")  # BT-ES-1
+    _sub(root, _CBC_NS, "IssueDate", invoice.date)  # BT-2
+    if invoice.payment and invoice.payment.due_date:
+        _sub(root, _CBC_NS, "DueDate", invoice.payment.due_date)  # BT-9
+    _sub(root, _CBC_NS, "InvoiceTypeCode", "380")  # BT-3: 380 = commercial invoice
     if invoice.note:
-        _sub(root, _CBC_NS, "Note", invoice.note[:500])
+        _sub(root, _CBC_NS, "Note", invoice.note[:500])  # BG-1 (BT-22)
+    _sub(root, _CBC_NS, "DocumentCurrencyCode", currency)  # BT-5
 
-    # AccountingSupplierParty (seller)
-    asp = _sub(root, _CAC_NS, "AccountingSupplierParty")
-    party_s = _sub(asp, _CAC_NS, "Party")
-    ep_s = _sub(party_s, _CAC_NS, "EndpointID")
-    ep_s.set("schemeID", "0088")
-    ep_s.text = invoice.seller.tax_id.identifier
-    pid_s = _sub(party_s, _CAC_NS, "PartyIdentification")
-    pid_id_s = _sub(pid_s, _CBC_NS, "ID")
-    pid_id_s.set("schemeID", "0002")
-    pid_id_s.text = invoice.seller.tax_id.identifier
-    pn_s = _sub(party_s, _CAC_NS, "PartyName")
-    _sub(pn_s, _CBC_NS, "Name", invoice.seller.display_name[:100])
-    ptv_s = _sub(party_s, _CAC_NS, "PartyTaxScheme")
-    _sub(ptv_s, _CBC_NS, "CompanyID", invoice.seller.tax_id.identifier)
-    ts_s = _sub(ptv_s, _CAC_NS, "TaxScheme")
-    _sub(ts_s, _CBC_NS, "ID", "VAT")
-    pli_s = _sub(party_s, _CAC_NS, "PartyLegalEntity")
-    _sub(pli_s, _CBC_NS, "RegistrationName", invoice.seller.display_name[:100])
-    _sub(pli_s, _CBC_NS, "CompanyID", invoice.seller.tax_id.identifier)
+    _build_party(_sub(root, _CAC_NS, "AccountingSupplierParty"), invoice.seller)
+    _build_party(_sub(root, _CAC_NS, "AccountingCustomerParty"), invoice.buyer)
 
-    # AccountingCustomerParty (buyer)
-    acp = _sub(root, _CAC_NS, "AccountingCustomerParty")
-    party_b = _sub(acp, _CAC_NS, "Party")
-    ep_b = _sub(party_b, _CAC_NS, "EndpointID")
-    ep_b.set("schemeID", "0088")
-    ep_b.text = invoice.buyer.tax_id.identifier
-    pn_b = _sub(party_b, _CAC_NS, "PartyName")
-    _sub(pn_b, _CBC_NS, "Name", invoice.buyer.display_name[:100])
-    ptv_b = _sub(party_b, _CAC_NS, "PartyTaxScheme")
-    _sub(ptv_b, _CBC_NS, "CompanyID", invoice.buyer.tax_id.identifier)
-    ts_b = _sub(ptv_b, _CAC_NS, "TaxScheme")
-    _sub(ts_b, _CBC_NS, "ID", "VAT")
-    pli_b = _sub(party_b, _CAC_NS, "PartyLegalEntity")
-    _sub(pli_b, _CBC_NS, "RegistrationName", invoice.buyer.display_name[:100])
-    _sub(pli_b, _CBC_NS, "CompanyID", invoice.buyer.tax_id.identifier)
-
-    # Payment means (if payment provided)
-    if invoice.payment:
+    if invoice.payment:  # BG-16
         pm = _sub(root, _CAC_NS, "PaymentMeans")
         _sub(pm, _CBC_NS, "PaymentMeansCode", invoice.payment.payment_method_code or "30")
-        if invoice.payment.due_date:
-            _sub(pm, _CBC_NS, "PaymentDueDate", invoice.payment.due_date)
         if invoice.payment.iban:
             pfa = _sub(pm, _CAC_NS, "PayeeFinancialAccount")
-            _sub(pfa, _CBC_NS, "ID", invoice.payment.iban)
+            account = _sub(pfa, _CBC_NS, "ID", invoice.payment.iban)
+            account.set("schemeID", "IBAN")
 
-    # TaxTotal
     tax_base_total = sum((v.taxable_base for v in invoice.vat_summary), Decimal("0"))
     tax_amount_total = sum((v.vat_amount for v in invoice.vat_summary), Decimal("0"))
     grand_total = tax_base_total + tax_amount_total
 
-    tt = _sub(root, _CAC_NS, "TaxTotal")
-    tta = _sub(tt, _CBC_NS, "TaxAmount", fmt_amount(tax_amount_total))
-    tta.set("currencyID", invoice.currency.upper())
+    tt = _sub(root, _CAC_NS, "TaxTotal")  # BG-22 / BG-23
+    _amount(tt, "TaxAmount", tax_amount_total, currency)
     for vat in invoice.vat_summary:
-        ts_elem = _sub(tt, _CAC_NS, "TaxSubtotal")
-        tsb = _sub(ts_elem, _CBC_NS, "TaxableAmount", fmt_amount(vat.taxable_base))
-        tsb.set("currencyID", invoice.currency.upper())
-        tsa = _sub(ts_elem, _CBC_NS, "TaxAmount", fmt_amount(vat.vat_amount))
-        tsa.set("currencyID", invoice.currency.upper())
-        tc = _sub(ts_elem, _CAC_NS, "TaxCategory")
-        _sub(tc, _CBC_NS, "ID", "S")
-        _sub(tc, _CBC_NS, "Percent", fmt_amount(vat.vat_rate))
-        tsch = _sub(tc, _CAC_NS, "TaxScheme")
-        _sub(tsch, _CBC_NS, "ID", "VAT")
+        subtotal = _sub(tt, _CAC_NS, "TaxSubtotal")
+        _amount(subtotal, "TaxableAmount", vat.taxable_base, currency)
+        _amount(subtotal, "TaxAmount", vat.vat_amount, currency)
+        category = _sub(subtotal, _CAC_NS, "TaxCategory")
+        _sub(category, _CBC_NS, "ID", "S")
+        _sub(category, _CBC_NS, "Percent", fmt_amount(vat.vat_rate))
+        _sub(_sub(category, _CAC_NS, "TaxScheme"), _CBC_NS, "ID", "VAT")
 
-    # LegalMonetaryTotal
     lmt = _sub(root, _CAC_NS, "LegalMonetaryTotal")
-    lab = _sub(lmt, _CBC_NS, "LineExtensionAmount", fmt_amount(tax_base_total))
-    lab.set("currencyID", invoice.currency.upper())
-    teb = _sub(lmt, _CBC_NS, "TaxExclusiveAmount", fmt_amount(tax_base_total))
-    teb.set("currencyID", invoice.currency.upper())
-    tib = _sub(lmt, _CBC_NS, "TaxInclusiveAmount", fmt_amount(grand_total))
-    tib.set("currencyID", invoice.currency.upper())
-    pab = _sub(lmt, _CBC_NS, "PayableAmount", fmt_amount(grand_total))
-    pab.set("currencyID", invoice.currency.upper())
+    _amount(lmt, "LineExtensionAmount", tax_base_total, currency)
+    _amount(lmt, "TaxExclusiveAmount", tax_base_total, currency)
+    _amount(lmt, "TaxInclusiveAmount", grand_total, currency)
+    _amount(lmt, "PayableAmount", grand_total, currency)
 
-    # InvoiceLine
-    for i, line in enumerate(invoice.lines, start=1):
+    for i, line in enumerate(invoice.lines, start=1):  # BG-25
         il = _sub(root, _CAC_NS, "InvoiceLine")
         _sub(il, _CBC_NS, "ID", str(i))
-        ilq = _sub(il, _CBC_NS, "InvoicedQuantity", fmt_amount(line.quantity or Decimal("1")))
-        ilq.set("unitCode", line.unit_of_measure or "EA")
-        ila = _sub(il, _CBC_NS, "LineExtensionAmount", fmt_amount(line.total_price))
-        ila.set("currencyID", invoice.currency.upper())
+        quantity = _sub(il, _CBC_NS, "InvoicedQuantity", fmt_amount(line.quantity or Decimal("1")))
+        quantity.set("unitCode", line.unit_of_measure or "EA")
+        _amount(il, "LineExtensionAmount", line.total_price, currency)
         item = _sub(il, _CAC_NS, "Item")
         _sub(item, _CBC_NS, "Description", line.description[:500])
-        itc = _sub(item, _CAC_NS, "ClassifiedTaxCategory")
-        _sub(itc, _CBC_NS, "ID", "S")
-        _sub(itc, _CBC_NS, "Percent", fmt_amount(line.vat_rate))
-        isc = _sub(itc, _CAC_NS, "TaxScheme")
-        _sub(isc, _CBC_NS, "ID", "VAT")
-        pp = _sub(il, _CAC_NS, "Price")
-        ppa = _sub(pp, _CBC_NS, "PriceAmount", fmt_amount(line.unit_price))
-        ppa.set("currencyID", invoice.currency.upper())
+        _sub(item, _CBC_NS, "Name", line.description[:100])
+        category = _sub(item, _CAC_NS, "ClassifiedTaxCategory")
+        _sub(category, _CBC_NS, "ID", "S")
+        _sub(category, _CBC_NS, "Percent", fmt_amount(line.vat_rate))
+        _sub(_sub(category, _CAC_NS, "TaxScheme"), _CBC_NS, "ID", "VAT")
+        _amount(_sub(il, _CAC_NS, "Price"), "PriceAmount", line.unit_price, currency)
 
     return etree.tostring(root, xml_declaration=True, encoding="UTF-8", pretty_print=True)
 
@@ -233,16 +240,20 @@ def build_ubl_invoice(invoice: InvoiceDocument) -> bytes:
 async def es__generate_b2b_einvoice_es(
     invoice: dict[str, Any],
     format: str = "ubl",  # noqa: A002
+    is_copy: bool = False,
 ) -> dict[str, Any]:
-    """Genera una factura B2B conforme a EN 16931 en formato UBL 2.1 o Facturae 3.2.2.
+    """Genera una factura B2B conforme a EN 16931 en formato UBL o Facturae 3.2.2.
 
-    Según la Ley 18/2022 'Crea y Crece'. RD 238/2026 publicado; formatos
-    confirmados (EN 16931: CII/UBL/EDIFACT/Facturae). Orden HAC/1028/2026 regula la
-    solución pública; las especificaciones técnicas de la AEAT están pendientes.
+    Según la Ley 18/2022 'Crea y Crece'. El formato UBL sigue el anexo I de la Orden
+    HAC/1028/2026 (identificador de especificación y tipo de proceso de la solución
+    pública de la AEAT, identificación fiscal del vendedor y del comprador, dirección
+    postal obligatoria) y se valida contra el esquema OASIS UBL 2.5.
 
     Args:
         invoice: Datos de la factura.
         format: Formato de salida: 'ubl' (por defecto) o 'facturae'.
+        is_copy: Solo UBL. BT-ES-1: true marca el documento como copia fiel; por
+            defecto es un original.
     """
     try:
         try:
@@ -253,8 +264,8 @@ async def es__generate_b2b_einvoice_es(
         parsed_invoice = parse_invoice(invoice)
 
         if fmt == B2BFormat.ubl:
-            xml_bytes = build_ubl_invoice(parsed_invoice)
-            schema_desc = "UBL 2.1 (EN 16931)"
+            xml_bytes = build_ubl_invoice(parsed_invoice, is_copy=bool(is_copy))
+            schema_desc = "UBL 2.5 (EN 16931, AEAT public solution, Orden HAC/1028/2026 Annex I)"
         else:
             xml_bytes = build_facturae_xml(parsed_invoice)
             schema_desc = "Facturae 3.2.2 (EN 16931)"
@@ -271,11 +282,12 @@ async def es__generate_b2b_einvoice_es(
                     "RD 238/2026 publicado; formatos confirmados (EN 16931: CII/UBL/EDIFACT/"
                     "Facturae). Orden HAC/1028/2026 (BOE-A-2026-20587) regula la solución "
                     "pública: EN 16931 en sintaxis UBL, código único (NIF emisor + serie/número "
-                    "+ fecha) y contenido mínimo en su anexo I. Este generador no sigue aún la "
-                    "estructura UBL de la solución pública: las especificaciones técnicas y la "
-                    "volumetría de la AEAT (sede electrónica) están pendientes de contrastar "
-                    "[Unverified]. La copia fiel remitida a la solución pública será UBL "
-                    "(art. 6.2 RD 238/2026; art. 4 de la Orden)."
+                    "+ fecha) y contenido mínimo en su anexo I. El generador UBL cubre un "
+                    "subconjunto del anexo I (factura ordinaria tipo 380, un tipo de IVA 'S' "
+                    "por línea, sin los grupos específicos BG-ES) y no ejecuta las reglas "
+                    "Schematron EN 16931:2026 de la AEAT, no publicadas [Unverified]. La copia "
+                    "fiel remitida a la solución pública será UBL (art. 6.2 RD 238/2026; "
+                    "art. 4 de la Orden)."
                 ),
             }
         )
@@ -295,8 +307,9 @@ async def es__check_b2b_mandate_applicability(
 ) -> dict[str, Any]:
     """Determina el régimen de facturación electrónica aplicable.
 
-    VERI*FACTU, SII, TicketBAI, NaTicket, a partir del volumen de operaciones,
-    código de provincia y enrolamiento en SII. Aplica la lógica de exclusión
+    VERI*FACTU o SII, a partir del volumen de operaciones, código de provincia
+    y enrolamiento en SII. Las provincias forales (TicketBAI, NaTicket) se
+    señalan como fuera de alcance. Aplica la lógica de exclusión
     mutua del Real Decreto 254/2025.
 
     Args:

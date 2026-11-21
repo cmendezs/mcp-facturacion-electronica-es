@@ -55,6 +55,7 @@ from mcp_facturacion_electronica_es._helpers import (
     err,
     face_env,
     fmt_amount,
+    load_xsd_validator,
     ok,
     parse_invoice,
 )
@@ -133,21 +134,48 @@ _EU_COUNTRIES = frozenset(
 )
 
 
+def _facturae_country(code: str) -> str:
+    """Return the ISO 3166-1 alpha-3 code the Facturae 3.2.2 ``CountryType`` requires.
+
+    The schema enumerates alpha-3 codes only (e.g. ``ESP``), while core models carry
+    alpha-2. ``ES`` maps to ``ESP``; a code already given as alpha-3 passes through
+    for the schema to check.
+
+    Raises:
+        EInvoicingError: For any other alpha-2 code.
+    """
+    value = (code or "").strip().upper()
+    if value == "ES":
+        return "ESP"
+    if len(value) == 3:
+        return value
+    # [GAP id=core.iso3166_alpha3 description="no alpha-2 to alpha-3 country table in core"]
+    raise EInvoicingError(
+        f"Facturae 3.2.2 requires an ISO 3166-1 alpha-3 country code; pass {value!r} "
+        "as alpha-3 (for example 'FRA' for France)."
+    )
+
+
 def _build_legal_block(party_elem: etree._Element, party: Any) -> None:
     """Append LegalEntity or Individual block."""
     if party.name:
         le = _sub(party_elem, "LegalEntity")
         _sub(le, "CorporateName", party.name[:80])
         if party.address:
-            addr = _sub(
-                le, "AddressInSpain" if party.tax_id.country_code == "ES" else "OverseasAddress"
-            )
+            in_spain = party.address.country_code.upper() == "ES"
+            addr = _sub(le, "AddressInSpain" if in_spain else "OverseasAddress")
             _sub(addr, "Address", party.address.street[:80])
-            _sub(addr, "PostCode", party.address.postal_code[:10])
-            _sub(addr, "Town", party.address.city[:50])
-            if party.address.country_code == "ES":
-                _sub(addr, "Province", (party.address.province or "")[:20])
-            _sub(addr, "CountryCode", party.address.country_code.upper())
+            if in_spain:
+                _sub(addr, "PostCode", party.address.postal_code[:10])
+                _sub(addr, "Town", party.address.city[:50])
+            else:
+                _sub(
+                    addr,
+                    "PostCodeAndTown",
+                    f"{party.address.postal_code} {party.address.city}"[:50],
+                )
+            _sub(addr, "Province", (party.address.province or "")[:20])
+            _sub(addr, "CountryCode", _facturae_country(party.address.country_code))
     else:
         ind = _sub(party_elem, "Individual")
         _sub(ind, "Name", party.first_name or "")
@@ -156,7 +184,7 @@ def _build_legal_block(party_elem: etree._Element, party: Any) -> None:
 
 def build_facturae_xml(
     invoice: InvoiceDocument,
-    invoice_issuer_type: str = "EU",
+    invoice_issuer_type: str = "EM",
     irpf_amount: Decimal | None = None,
     irpf_rate: Decimal | None = None,
     resolution_reference: str | None = None,
@@ -169,7 +197,8 @@ def build_facturae_xml(
 
     Args:
         invoice: Validated core InvoiceDocument.
-        invoice_issuer_type: "EU" (private seller), "EM" (issuer is buyer), "TE" (third party).
+        invoice_issuer_type: "EM" (Proveedor, the seller issues), "RE" (Destinatario, the
+            buyer issues) or "TE" (Tercero). The legacy value "EU" is read as "EM".
         irpf_amount: IRPF withholding amount to deduct from invoice total.
         irpf_rate: IRPF withholding rate as a percentage (e.g. 15.00), emitted in the
             <TaxesWithheld><Tax TaxTypeCode="04"> block alongside irpf_amount.
@@ -189,18 +218,23 @@ def build_facturae_xml(
         UTF-8 encoded Facturae 3.2.2 XML bytes (unsigned).
     """
     tax_type_code = FACTURAE_TAX_TYPE_CODES[SpanishTaxType(tax_type)]
+    # Facturaev3_2_2.xml declares no elementFormDefault, so only the root element
+    # belongs to the target namespace; every child element is unqualified. A
+    # default xmlns declaration would wrongly place all children in the namespace
+    # (schema validation: "Element FileHeader: This element is not expected"),
+    # so the root takes the `fe` prefix, as in the official Factura-e examples.
     nsmap = {
-        None: _FACTURAE_NS,
+        "fe": _FACTURAE_NS,
         "ds": _DS_NS,
         "xades": _XADES_NS,
     }
-    root = etree.Element("Facturae", nsmap=nsmap)
+    root = etree.Element(f"{{{_FACTURAE_NS}}}Facturae", nsmap=nsmap)
 
     # FileHeader
     fh = _sub(root, "FileHeader")
     _sub(fh, "SchemaVersion", "3.2.2")
     _sub(fh, "Modality", "I")  # I = individual invoice
-    _sub(fh, "InvoiceIssuerType", invoice_issuer_type)
+    _sub(fh, "InvoiceIssuerType", "EM" if invoice_issuer_type == "EU" else invoice_issuer_type)
 
     # Compute totals
     tax_base = sum((v.taxable_base for v in invoice.vat_summary), Decimal("0"))
@@ -394,7 +428,7 @@ def _parse_face_response(response: Any) -> dict[str, Any]:
 async def es__generate_facturae_xml(
     invoice: dict[str, Any],
     schema_version: str = "3.2.2",
-    invoice_issuer_type: str = "EU",
+    invoice_issuer_type: str = "EM",
     tax_type: str = "IVA",
     recargo_equivalencia_rate: float | None = None,
     recargo_equivalencia_amount: float | None = None,
@@ -410,8 +444,9 @@ async def es__generate_facturae_xml(
     Args:
         invoice: InvoiceDocument con seller, buyer, vat_summary y lines.
         schema_version: Versión del esquema Facturae (por defecto: '3.2.2').
-        invoice_issuer_type: EU (emisor=vendedor), EM (emisor=comprador),
-            TE (tercero). Por defecto: 'EU'.
+        invoice_issuer_type: EM (proveedor, emite el vendedor), RE (destinatario,
+            emite el comprador), TE (tercero). 'EU' se acepta como alias de 'EM'.
+            Por defecto: 'EM'.
         tax_type: Impuesto indirecto aplicable a todas las líneas de la factura
             (IVA: península/Baleares; IPSI: Ceuta/Melilla; IGIC: Canarias).
             No se admite mezclar impuestos en una misma factura. Por defecto: 'IVA'.
@@ -738,22 +773,11 @@ async def es__validate_facturae_schema(
 
         if _FACTURAEV3_2_2_XSD.exists():
             try:
-                schema = etree.XMLSchema(etree.parse(str(_FACTURAEV3_2_2_XSD)))
-                schema.validate(root)
-                for e in schema.error_log:
-                    errors.append(f"[XSD] {e.message} (línea {e.line})")
+                result = load_xsd_validator(_FACTURAEV3_2_2_XSD).validate(xml_bytes)
+                for m in result.errors:
+                    errors.append(f"[XSD] {m.text} ({m.location.replace('line', 'línea')})")
                 validation_mode = "xsd"
             except Exception as exc:
-                # [Unverified] Facturaev3_2_2.xml itself <xs:import>s the W3C
-                # XML-DSig schema by absolute URL
-                # (http://www.w3.org/TR/xmldsig-core/xmldsig-core-schema.xsd),
-                # which is not bundled locally and does not resolve offline —
-                # confirmed 2026-09-09 that schema compilation currently fails
-                # for this reason (a `ds:Signature` element reference does not
-                # resolve). A local copy + core's XSDValidator known_imports
-                # resolver hook (v1.32.0, CORE-7 pattern) would fix this, but
-                # per project policy normative specs must be user-supplied,
-                # not agent-fetched (tracked as CORE-1-ES-DSIG).
                 warnings.append(f"XSD validation failed to run: {exc}")
         else:
             warnings.append(

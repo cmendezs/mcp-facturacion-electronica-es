@@ -1,0 +1,31 @@
+<DocumentStatus xmlns="urn:oasis:names:specification:ubl:schema:xsd:DocumentStatus-2" xmlns:cac="urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2" xmlns:cbc="urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2" xmlns:ns3="urn:oasis:names:specification:ubl:schema:xsd:CommonExtensionComponents-2">
+    <cbc:ID>QUERYBYID-20261012</cbc:ID>
+    <cbc:IssueDate>2026-10-12</cbc:IssueDate>
+    <cac:DocumentResponse>
+        <cac:Response>
+            <cac:Status>
+                <cbc:StatusReasonCode>200</cbc:StatusReasonCode>
+                <cbc:StatusReason>Búsqueda realizada correctamente</cbc:StatusReason>
+            </cac:Status>
+        </cac:Response>
+		<cac:DocumentReference>
+			<cbc:ID/>
+		</cac:DocumentReference>
+    </cac:DocumentResponse>
+    <cac:AdditionalDocumentResponse>
+        <cac:Response>
+            <cbc:ResponseCode>ACCEPTED</cbc:ResponseCode>
+        </cac:Response>
+        <cac:DocumentReference>
+            <cbc:ID>CLASEA00000182</cbc:ID>
+            <cbc:IssueDate>2026-10-05</cbc:IssueDate>
+            <cbc:ReferencedDocumentInternalAddress>LOCGENV1:O:qeDXBPkScSuOFg52USJbd0CU0fVjecBMeCGFsmiKb5fKkajGolrRTkaSbZ7ofsy2LztbNFMeqjfqWXjEXSXPW+C8lzQuBdMDdSZ9Yr1hNjo=</cbc:ReferencedDocumentInternalAddress>
+            <cac:IssuerParty>
+                <cac:PartyTaxScheme>
+                    <cbc:CompanyID>xxxx</cbc:CompanyID>
+                    <cac:TaxScheme/>
+                </cac:PartyTaxScheme>
+            </cac:IssuerParty>
+        </cac:DocumentReference>
+    </cac:AdditionalDocumentResponse>
+</DocumentStatus>

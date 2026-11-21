@@ -40,8 +40,9 @@ Encadenado a la secuencia de huellas actual.
 
 Determina el régimen de facturación electrónica aplicable.
 
-VERI*FACTU, SII, TicketBAI, NaTicket, a partir del volumen de operaciones,
-código de provincia y enrolamiento en SII. Aplica la lógica de exclusión
+VERI*FACTU o SII, a partir del volumen de operaciones, código de provincia
+y enrolamiento en SII. Las provincias forales (TicketBAI, NaTicket) se
+señalan como fuera de alcance. Aplica la lógica de exclusión
 mutua del Real Decreto 254/2025.
 
 | Parameter | Type | Required | Default | Description |
@@ -55,9 +56,11 @@ mutua del Real Decreto 254/2025.
 
 Detecta el régimen de facturación electrónica aplicable.
 
-A partir del código de provincia INE de dos dígitos. Devuelve VERIFACTU,
-TICKETBAI, NATICKET o VERIFACTU+SII. Usar siempre antes de llamar a
-cualquier otra herramienta de este servidor.
+A partir del código de provincia INE de dos dígitos. Devuelve VERIFACTU o
+VERIFACTU+SII. Para las provincias forales (Álava, Gipuzkoa, Bizkaia y
+Navarra), cuyos sistemas TicketBAI y NaTicket quedan fuera del alcance de
+este servidor, añade además un aviso `out_of_scope_warning`. Usar siempre
+antes de llamar a cualquier otra herramienta de este servidor.
 
 | Parameter | Type | Required | Default | Description |
 |---|---|---|---|---|
@@ -66,16 +69,18 @@ cualquier otra herramienta de este servidor.
 
 ## `es__generate_b2b_einvoice_es`
 
-Genera una factura B2B conforme a EN 16931 en formato UBL 2.1 o Facturae 3.2.2.
+Genera una factura B2B conforme a EN 16931 en formato UBL o Facturae 3.2.2.
 
-Según la Ley 18/2022 'Crea y Crece'. RD 238/2026 publicado; formatos
-confirmados (EN 16931: CII/UBL/EDIFACT/Facturae). Orden Ministerial
-(Hacienda) pendiente para la solución pública.
+Según la Ley 18/2022 'Crea y Crece'. El formato UBL sigue el anexo I de la Orden
+HAC/1028/2026 (identificador de especificación y tipo de proceso de la solución
+pública de la AEAT, identificación fiscal del vendedor y del comprador, dirección
+postal obligatoria) y se valida contra el esquema OASIS UBL 2.5.
 
 | Parameter | Type | Required | Default | Description |
 |---|---|---|---|---|
 | `invoice` | object | yes |  | Datos de la factura. |
 | `format` | string | no | `'ubl'` | Formato de salida: 'ubl' (por defecto) o 'facturae'. |
+| `is_copy` | boolean | no | `False` | Solo UBL. BT-ES-1: true marca el documento como copia fiel; por defecto es un original. |
 
 ## `es__generate_facturae_xml`
 
@@ -87,7 +92,7 @@ El documento generado está sin firmar; use es__sign_facturae_xades para firmarl
 |---|---|---|---|---|
 | `invoice` | object | yes |  | InvoiceDocument con seller, buyer, vat_summary y lines. |
 | `schema_version` | string | no | `'3.2.2'` | Versión del esquema Facturae (por defecto: '3.2.2'). |
-| `invoice_issuer_type` | string | no | `'EU'` | EU (emisor=vendedor), EM (emisor=comprador), TE (tercero). Por defecto: 'EU'. |
+| `invoice_issuer_type` | string | no | `'EM'` | EM (proveedor, emite el vendedor), RE (destinatario, emite el comprador), TE (tercero). 'EU' se acepta como alias de 'EM'. Por defecto: 'EM'. |
 | `tax_type` | string | no | `'IVA'` | Impuesto indirecto aplicable a todas las líneas de la factura (IVA: península/Baleares; IPSI: Ceuta/Melilla; IGIC: Canarias). No se admite mezclar impuestos en una misma factura. Por defecto: 'IVA'. |
 | `recargo_equivalencia_rate` | number | null | no | `None` | Tipo de Recargo de Equivalencia (%), si aplica. |
 | `recargo_equivalencia_amount` | number | null | no | `None` | Importe explícito del Recargo de Equivalencia. Si se omite, se calcula como base_imponible * recargo_equivalencia_rate / 100. |

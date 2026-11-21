@@ -159,9 +159,11 @@ async def es__detect_regional_regime(
 ) -> dict[str, Any]:
     """Detecta el régimen de facturación electrónica aplicable.
 
-    A partir del código de provincia INE de dos dígitos. Devuelve VERIFACTU,
-    TICKETBAI, NATICKET o VERIFACTU+SII. Usar siempre antes de llamar a
-    cualquier otra herramienta de este servidor.
+    A partir del código de provincia INE de dos dígitos. Devuelve VERIFACTU o
+    VERIFACTU+SII. Para las provincias forales (Álava, Gipuzkoa, Bizkaia y
+    Navarra), cuyos sistemas TicketBAI y NaTicket quedan fuera del alcance de
+    este servidor, añade además un aviso `out_of_scope_warning`. Usar siempre
+    antes de llamar a cualquier otra herramienta de este servidor.
 
     Args:
         province_code: Código de provincia INE de dos dígitos (p. ej.,

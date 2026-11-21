@@ -30,3 +30,12 @@ def test_server_json_version_matches_pyproject() -> None:
     assert pkg_version == expected, (
         f"server.json packages[0].version={pkg_version} drifted from pyproject={expected}"
     )
+
+
+def test_sistema_informatico_version_tracks_package_version() -> None:
+    """SistemaInformatico/Version must follow the package version, never a literal."""
+    source = (
+        _PACKAGE_ROOT / "src" / "mcp_facturacion_electronica_es" / "tools" / "verifactu.py"
+    ).read_text()
+    assert '"Version", "0.1.0"' not in source
+    assert source.count('_sub(si, "Version", _PACKAGE_VERSION)') == 2
